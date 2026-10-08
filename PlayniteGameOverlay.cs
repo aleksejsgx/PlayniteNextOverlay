@@ -29,33 +29,44 @@ namespace PlayniteGameOverlay
 
         private ControllerState controllerState = new ControllerState();
 
-        public override Guid Id { get; } = Guid.Parse("fc75626e-ec69-4287-972a-b86298555ebb");
+        public override Guid Id { get; } = Guid.Parse("fc70f846-3640-46f0-9f86-5f0b991ca4aa");
 
         DateTime gameStarted;
 
-        // SuccessStory integration
+        // Overlay views (achievement list) + game pause
+        private readonly GameProcessSuspender suspender = new GameProcessSuspender(logger);
+        private System.Windows.Threading.DispatcherTimer suspendWatchdog;
+        private Game overlayGame;                    // game the overlay was last shown/started for
+        private int overlayGameProcessId = -1;       // game process detected by the overlay (FindRunningGameProcess)
+        private int lastStartedProcessId = -1;       // OnGameStartedEventArgs.StartedProcessId
+        private int foregroundPidBeforeOverlay = -1; // owner of the foreground window right before the overlay opened
+
+        // Achievement integrations
+        // Preferred: "Playnite Achievements" (Justin Delano), read-only from its SQLite cache.
+        // Fallback: SuccessStory JSON files.
+        private bool isPlayniteAchievementsAvailable = false;
         private bool isSuccessStoryAvailable = false;
         private Guid successStoryId = Guid.Parse("cebe6d32-8c46-4459-b993-5a5189d60788"); // SuccessStory plugin ID
 
-        private void CheckSuccessStoryAvailability()
+        private void CheckAchievementProviders()
         {
             try
             {
                 var plugins = playniteAPI.Addons.Plugins;
+                isPlayniteAchievementsAvailable = plugins.Any(p => p.Id == PlayniteAchievementsReader.PluginId);
                 isSuccessStoryAvailable = plugins.Any(p => p.Id == successStoryId);
 
-                if (isSuccessStoryAvailable)
+                if (isPlayniteAchievementsAvailable)
                 {
-                    log("SuccessStory plugin detected, achievement integration enabled");
+                    PlayniteAchievementsReader.PreloadNative(playniteAPI.Paths.ApplicationPath, m => logger.Warn(m));
                 }
-                else
-                {
-                    log("SuccessStory plugin not found, achievement integration disabled");
-                }
+
+                log($"Achievement providers: PlayniteAchievements={isPlayniteAchievementsAvailable}, SuccessStory={isSuccessStoryAvailable}");
             }
             catch (Exception ex)
             {
-                log($"Error checking for SuccessStory plugin: {ex.Message}", "ERROR");
+                log($"Error checking for achievement plugins: {ex.Message}", "ERROR");
+                isPlayniteAchievementsAvailable = false;
                 isSuccessStoryAvailable = false;
             }
         }
@@ -73,6 +84,13 @@ namespace PlayniteGameOverlay
                 {
                     // Log all controller actions
                     log($"Window Recieved {args.State.ToString()}: {args.Button.ToString()}", "SDL_INPUT");
+
+                    // Achievement list view has its own controls (needs releases too, for hold-to-repeat)
+                    if (overlayWindow.IsAchievementListOpen)
+                    {
+                        overlayWindow.HandleAchievementListInput(args.Button, args.State == ControllerInputState.Pressed);
+                        return;
+                    }
 
                     // ignore releases
                     if (mostRecentPress == null)
@@ -160,21 +178,35 @@ namespace PlayniteGameOverlay
         {
             playniteAPI = api;
             Properties = new GenericPluginProperties { HasSettings = true };
+
+            // Safety nets: never leave a game suspended if Playnite exits or crashes.
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => suspender.ResumeAll("Playnite process exit");
+            AppDomain.CurrentDomain.UnhandledException += (s, e) => suspender.ResumeAll("unhandled exception");
         }
 
         public override void OnApplicationStarted(OnApplicationStartedEventArgs args)
         {
             logger.Info("Starting Overlay Extension...");
 
-            // Check if SuccessStory is installed
-            CheckSuccessStoryAvailability();
+            // Check which achievement plugins are installed (Playnite Achievements / SuccessStory)
+            CheckAchievementProviders();
 
             // Initialize overlay window
             overlayWindow = new OverlayWindow(Settings);
             overlayWindow.Hide();
 
-            // Set up show Playnite handler
-            overlayWindow.OnShowPlayniteRequested += ShowPlaynite;
+            // Set up show Playnite handler + achievement list events
+            WireOverlayWindow(overlayWindow);
+
+            try
+            {
+                System.Windows.Application.Current.DispatcherUnhandledException +=
+                    (s, e) => suspender.ResumeAll("dispatcher unhandled exception");
+            }
+            catch (Exception ex)
+            {
+                logger.Warn($"Could not hook DispatcherUnhandledException: {ex.Message}");
+            }
 
             // Initialize global keyboard hook
             keyboardHook = new GlobalKeyboardHook();
@@ -183,6 +215,7 @@ namespace PlayniteGameOverlay
 
         public void ReloadOverlay(OverlaySettings settings)
         {
+            suspender.ResumeAll("overlay reloaded (settings saved)");
             overlayWindow.Close(); //close old window
             overlayWindow = new OverlayWindow(settings != null ? settings : Settings); //open new one
             overlayWindow.Hide();
@@ -191,18 +224,219 @@ namespace PlayniteGameOverlay
                 overlayWindow.UpdateGameOverlay(GameOverlayData);
             }
 
-            // Set up show Playnite handler again
-            overlayWindow.OnShowPlayniteRequested += ShowPlaynite;
+            // Set up show Playnite handler + achievement list events again
+            WireOverlayWindow(overlayWindow);
+        }
+
+        private void WireOverlayWindow(OverlayWindow window)
+        {
+            window.OnShowPlayniteRequested += ShowPlaynite;
+            window.AchievementListRequested += OnAchievementListRequested;
+            window.AchievementListClosed += OnAchievementListClosed;
         }
 
         public override void OnApplicationStopped(OnApplicationStoppedEventArgs args)
         {
             logger.Info("Stopping Overlay...");
 
+            // Never leave a game frozen
+            suspender.ResumeAll("Playnite stopping");
+            suspendWatchdog?.Stop();
+
             // Cleanup resources
             overlayWindow?.Close();
             keyboardHook?.Dispose();
         }
+
+        public override void Dispose()
+        {
+            // Extension unload: last chance to resume a suspended game
+            suspender.ResumeAll("extension dispose");
+            base.Dispose();
+        }
+
+        #region Achievement list view + game pause
+
+        private void OnAchievementListRequested()
+        {
+            var game = overlayGame ?? playniteAPI.Database.Games.FirstOrDefault(g => g.IsRunning);
+            if (game == null)
+            {
+                logger.Warn("Achievement list requested but no game is associated with the overlay.");
+                return;
+            }
+
+            List<AchievementData> achievements;
+            var sw = Stopwatch.StartNew();
+            try
+            {
+                achievements = GetGameAchievements(game) ?? new List<AchievementData>();
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Error loading achievement list for {game.Name}: {ex.Message}");
+                achievements = new List<AchievementData>();
+            }
+            sw.Stop();
+            logger.Info($"Achievement list opened for {game.Name}: {achievements.Count} achievements ({achievements.Count(a => a.IsUnlocked)} unlocked), loaded in {sw.ElapsedMilliseconds} ms");
+
+            overlayWindow.OpenAchievementList(game.Name, achievements);
+
+            if (Settings.SuspendGameInOverlayViews)
+            {
+                overlayWindow.SetGamePauseStatus("Pausing game...");
+                // Let the list render first, then freeze the game.
+                System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                    System.Windows.Threading.DispatcherPriority.Background,
+                    new Action(() => SuspendGameForOverlayView(game)));
+            }
+            else
+            {
+                overlayWindow.SetGamePauseStatus(null);
+                logger.Info("Game pause for overlay views is disabled in settings; game keeps running.");
+            }
+        }
+
+        private void OnAchievementListClosed()
+        {
+            suspender.ResumeAll("achievement list closed");
+            suspendWatchdog?.Stop();
+        }
+
+        private void SuspendGameForOverlayView(Game game)
+        {
+            try
+            {
+                // The view may already have been closed again before this deferred call ran.
+                if (overlayWindow == null || !overlayWindow.IsVisible || !overlayWindow.IsAchievementListOpen)
+                {
+                    logger.Info("[Overlay suspend] View closed before the game could be paused; nothing to do.");
+                    return;
+                }
+
+                string source;
+                var pids = GetGameProcessesToSuspend(game, out source);
+                if (pids.Count == 0)
+                {
+                    logger.Warn($"[Overlay suspend] No game process found for {game.Name}; the game keeps running.");
+                    overlayWindow.SetGamePauseStatus("Game not paused (process not found)");
+                    return;
+                }
+
+                logger.Info($"[Overlay suspend] Pausing {game.Name}: candidate PIDs {string.Join(", ", pids)} (source: {source})");
+                int n = suspender.Suspend(pids, $"achievement list open ({source})", playniteAPI.Paths.ApplicationPath);
+                if (n > 0)
+                {
+                    overlayWindow.SetGamePauseStatus("Game paused");
+                    StartSuspendWatchdog();
+                }
+                else
+                {
+                    overlayWindow.SetGamePauseStatus("Game not paused (see log)");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"[Overlay suspend] Unexpected error while pausing the game: {ex}");
+                suspender.ResumeAll("error while suspending");
+                overlayWindow?.SetGamePauseStatus("Game not paused (error)");
+            }
+        }
+
+        /// <summary>
+        /// Picks the root game process and returns it plus its descendants. Order of preference:
+        ///  1. the process the overlay itself detected for this game (same detection used by "Exit Game"),
+        ///     accepted only if its exe is inside the game's install folder, it is part of the
+        ///     Playnite-started process tree, or it owned the foreground window before the overlay opened;
+        ///  2. the process tree Playnite started (OnGameStarted StartedProcessId, e.g. emulators);
+        ///  3. the process that owned the foreground window right before the overlay opened.
+        /// Each PID is then filtered again by GameProcessSuspender's safety rules.
+        /// </summary>
+        private List<int> GetGameProcessesToSuspend(Game game, out string source)
+        {
+            source = null;
+            int root = -1;
+
+            if (GameProcessSuspender.IsAlive(overlayGameProcessId))
+            {
+                var path = GameProcessSuspender.TryGetProcessPath(overlayGameProcessId);
+                bool inInstallDir = GameProcessSuspender.IsUnderDirectory(path, game?.InstallDirectory);
+                bool inStartedTree = lastStartedProcessId > 0 && GameProcessSuspender.IsAlive(lastStartedProcessId) &&
+                                     GetProcessTree(lastStartedProcessId).Any(p => p.Id == overlayGameProcessId);
+                bool wasForeground = overlayGameProcessId == foregroundPidBeforeOverlay;
+                if (inInstallDir || inStartedTree || wasForeground)
+                {
+                    root = overlayGameProcessId;
+                    source = $"overlay-detected game process (installDir={inInstallDir}, startedTree={inStartedTree}, foreground={wasForeground})";
+                }
+                else
+                {
+                    logger.Info($"[Overlay suspend] Detected process {overlayGameProcessId} ({path}) is not in the install folder, the started tree or the foreground; ignoring it.");
+                }
+            }
+
+            if (root <= 0 && GameProcessSuspender.IsAlive(lastStartedProcessId))
+            {
+                root = lastStartedProcessId;
+                source = "process tree started by Playnite";
+            }
+
+            if (root <= 0 && GameProcessSuspender.IsAlive(foregroundPidBeforeOverlay))
+            {
+                root = foregroundPidBeforeOverlay;
+                source = "foreground process before the overlay opened";
+            }
+
+            if (root <= 0)
+                return new List<int>();
+
+            var tree = GetProcessTree(root);
+            var pids = new List<int> { root };
+            pids.AddRange(tree.Select(p => p.Id).Where(id => id != root));
+            return pids.Distinct().ToList();
+        }
+
+        private void StartSuspendWatchdog()
+        {
+            if (suspendWatchdog == null)
+            {
+                // Safety net: if the view is gone for any reason (missed event, overlay hidden by some other path),
+                // resume within ~2 seconds.
+                suspendWatchdog = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                suspendWatchdog.Tick += (s, e) =>
+                {
+                    if (!suspender.HasSuspendedProcesses)
+                    {
+                        suspendWatchdog.Stop();
+                        return;
+                    }
+                    if (overlayWindow == null || !overlayWindow.IsVisible || !overlayWindow.IsAchievementListOpen)
+                    {
+                        suspender.ResumeAll("watchdog: overlay view no longer open");
+                        suspendWatchdog.Stop();
+                    }
+                };
+            }
+            suspendWatchdog.Start();
+        }
+
+        private static int GetForegroundProcessId()
+        {
+            try
+            {
+                var hwnd = WindowHelper.GetForegroundWindow();
+                if (hwnd == IntPtr.Zero) return -1;
+                uint pid;
+                WindowHelper.GetWindowThreadProcessId(hwnd, out pid);
+                return (int)pid;
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+
+        #endregion
 
         private void OnKeyPressed(Keys key, bool altPressed)
         {
@@ -224,10 +458,13 @@ namespace PlayniteGameOverlay
                 }
             }
 
-            // Escape to hide overlay
+            // Escape: close the achievement list if open, otherwise hide the overlay
             if (key == Keys.Escape && overlayWindow.IsVisible)
             {
-                overlayWindow.Hide();
+                if (overlayWindow.IsAchievementListOpen)
+                    overlayWindow.CloseAchievementList();
+                else
+                    overlayWindow.Hide();
             }
         }
 
@@ -236,6 +473,8 @@ namespace PlayniteGameOverlay
             try
             {
                 gameStarted = DateTime.Now;
+                overlayGame = args.Game;
+                lastStartedProcessId = args.StartedProcessId;
                 var gameOverlayData = CreateGameOverlayData(args.Game, args.StartedProcessId, gameStarted);
                 GameOverlayData = gameOverlayData;
                 overlayWindow.UpdateGameOverlay(gameOverlayData);
@@ -248,15 +487,25 @@ namespace PlayniteGameOverlay
 
         public override void OnGameStopped(OnGameStoppedEventArgs args)
         {
+            suspender.ResumeAll("game stopped");
+            overlayWindow.CloseAchievementList();
             overlayWindow.UpdateGameOverlay(null);
             GameOverlayData = null;
+            overlayGameProcessId = -1;
+            lastStartedProcessId = -1;
         }
 
         private void ShowGameOverlay(Game game)
         {
             //if (game == null) return;
 
-            var gameOverlayData = CreateGameOverlayData(game, FindRunningGameProcess(game, null)?.Id, gameStarted);
+            // Remember who had the foreground before we take it (fallback for the game pause)
+            var fg = GetForegroundProcessId();
+            foregroundPidBeforeOverlay = (fg > 0 && fg != Process.GetCurrentProcess().Id) ? fg : -1;
+
+            overlayGame = game;
+            overlayGameProcessId = FindRunningGameProcess(game, null)?.Id ?? -1;
+            var gameOverlayData = CreateGameOverlayData(game, overlayGameProcessId > 0 ? overlayGameProcessId : (int?)null, gameStarted);
             overlayWindow.UpdateGameOverlay(gameOverlayData);
             overlayWindow.ShowOverlay();
         }
@@ -280,42 +529,50 @@ namespace PlayniteGameOverlay
 
         private List<AchievementData> GetGameAchievements(Game game)
         {
-            log($"Retrieving achievements for game {game.Name} (ID: {game.Id}, SuccessStory Enabled: {isSuccessStoryAvailable})");
             var achievements = new List<AchievementData>();
+            if (game == null)
+                return achievements;
 
-            if (!isSuccessStoryAvailable || game == null)
+            log($"Retrieving achievements for game {game.Name} (ID: {game.Id}, PlayniteAchievements: {isPlayniteAchievementsAvailable}, SuccessStory: {isSuccessStoryAvailable})");
+
+            // 1) Playnite Achievements (preferred)
+            if (isPlayniteAchievementsAvailable)
+            {
+                try
+                {
+                    var pa = PlayniteAchievementsReader.GetAchievements(
+                        playniteAPI.Paths.ExtensionsDataPath, game.Id, m => logger.Warn(m));
+                    if (pa != null && pa.Count > 0)
+                    {
+                        logger.Info($"Retrieved {pa.Count} achievements ({pa.Count(a => a.IsUnlocked)} unlocked) for game {game.Name} from Playnite Achievements");
+                        return pa;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.Error($"Error retrieving achievements from Playnite Achievements: {ex.Message}");
+                }
+            }
+
+            // 2) SuccessStory (fallback)
+            if (!isSuccessStoryAvailable)
                 return achievements;
 
             try
             {
-                // Access SuccessStory's data through Playnite extension API
-                var successStory = playniteAPI.Addons.Plugins.FirstOrDefault(p => p.Id == successStoryId);
-                if (successStory != null)
-                {
-                    try
-                    {
-                        // Find SuccessStory's data directory
-                        string successStoryDir = Path.Combine(
-                            playniteAPI.Paths.ExtensionsDataPath, successStoryId.ToString(), "SuccessStory");
+                // Find SuccessStory's data directory
+                string successStoryDir = Path.Combine(
+                    playniteAPI.Paths.ExtensionsDataPath, successStoryId.ToString(), "SuccessStory");
 
-                        if (Directory.Exists(successStoryDir))
-                        {
-                            // Look for a file containing achievements for this game
-                            string achievementsFile = Path.Combine(successStoryDir, $"{game.Id}.json");
-                            if (System.IO.File.Exists(achievementsFile))
-                            {
-                                string achievementsJson = System.IO.File.ReadAllText(achievementsFile);
-                                achievements = ParseSuccessStoryData(achievementsJson);
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.Error($"Failed to get achievements from file: {ex.Message}");
-                    }
+                // Look for a file containing achievements for this game
+                string achievementsFile = Path.Combine(successStoryDir, $"{game.Id}.json");
+                if (System.IO.File.Exists(achievementsFile))
+                {
+                    string achievementsJson = System.IO.File.ReadAllText(achievementsFile);
+                    achievements = ParseSuccessStoryData(achievementsJson);
                 }
 
-                logger.Info($"Retrieved {achievements.Count} achievements for game {game.Name}");
+                logger.Info($"Retrieved {achievements.Count} achievements for game {game.Name} from SuccessStory");
             }
             catch (Exception ex)
             {
@@ -729,7 +986,11 @@ namespace PlayniteGameOverlay
                         Description = item.Description,
                         IsUnlocked = isUnlocked,
                         UnlockDate = unlockDate,
-                        IconUrl = isUnlocked ? item.UrlUnlocked : item.UrlLocked
+                        IconUrl = isUnlocked ? item.UrlUnlocked : item.UrlLocked,
+                        UnlockedIconUrl = item.UrlUnlocked,
+                        LockedIconUrl = item.UrlLocked,
+                        HasDistinctLockedIcon = !string.IsNullOrEmpty(item.UrlLocked) &&
+                            !string.Equals(item.UrlLocked, item.UrlUnlocked, StringComparison.OrdinalIgnoreCase)
                     });
                 }
 
@@ -821,6 +1082,21 @@ namespace PlayniteGameOverlay
         public bool IsUnlocked { get; set; }
         public DateTime? UnlockDate { get; set; }
         public string IconUrl { get; set; }
+
+        // Extra details used by the full achievement list (0.4.5.3). All optional: SuccessStory
+        // only fills the icon URLs, Playnite Achievements fills everything it has.
+        public string UnlockedIconUrl { get; set; }
+        public string LockedIconUrl { get; set; }
+        /// <summary>True when the provider has a real "locked" icon different from the unlocked one.</summary>
+        public bool HasDistinctLockedIcon { get; set; }
+        /// <summary>Hidden/secret achievement (description is concealed in the list until unlocked or revealed).</summary>
+        public bool IsHidden { get; set; }
+        /// <summary>Global unlock percentage (0-100) if known.</summary>
+        public double? GlobalPercentUnlocked { get; set; }
+        /// <summary>Provider rarity bucket, e.g. Common / Uncommon / Rare / UltraRare.</summary>
+        public string Rarity { get; set; }
+        public int? ProgressNum { get; set; }
+        public int? ProgressDenom { get; set; }
     }
 
     // Update your GameOverlayData class to include achievements
@@ -879,16 +1155,24 @@ namespace PlayniteGameOverlay
         private bool _showPerformanceOverlay = true;
         private bool _showScreenshotGallery = true;
         private bool _showWebBrowser = true;
-        private bool _showDiscord = true;
         private bool _showBattery = true;
+        private bool _showScreenshot = true;
+        private bool _showInstantReplay = true;
 
-        // Shortcut and path properties
-        private string _recordGameplayShortcut = "";
-        private string _recordRecentShortcut = "";
+        // Overlay views (achievement list now, screenshot gallery later): pause the game while open
+        private bool _suspendGameInOverlayViews = true;
+
+        // Shortcut and path properties.
+        // Defaults are the NVIDIA App's standard keys. They are only used by a fresh install:
+        // a saved config keeps its own values, including empty ones.
+        private string _recordGameplayShortcut = "%{F9}";          // Alt+F9: start/stop recording
+        private string _recordRecentShortcut = "%{F10}";           // Alt+F10: save Instant Replay
         private string _streamingShortcut = "";
-        private string _performanceOverlayShortcut = "";
+        private string _performanceOverlayShortcut = "%r";         // Alt+R: performance overlay
         private string _screenshotGalleryPath = "";
         private string _webBrowserPath = "";
+        private string _screenshotShortcut = "%{F1}";              // Alt+F1: screenshot
+        private string _instantReplayShortcut = "+%{F10}";         // Alt+Shift+F10: Instant Replay on/off
 
         public ControllerShortcut ControllerShortcut
         {
@@ -951,16 +1235,22 @@ namespace PlayniteGameOverlay
             set => SetValue(ref _showWebBrowser, value);
         }
 
-        public bool ShowDiscord
-        {
-            get => _showDiscord;
-            set => SetValue(ref _showDiscord, value);
-        }
-
         public bool ShowBattery
         {
             get => _showBattery;
             set => SetValue(ref _showBattery, value);
+        }
+
+        public bool ShowScreenshot
+        {
+            get => _showScreenshot;
+            set => SetValue(ref _showScreenshot, value);
+        }
+
+        public bool ShowInstantReplay
+        {
+            get => _showInstantReplay;
+            set => SetValue(ref _showInstantReplay, value);
         }
 
         // Properties for shortcuts and paths
@@ -1000,6 +1290,28 @@ namespace PlayniteGameOverlay
             set => SetValue(ref _webBrowserPath, value);
         }
 
+        public string ScreenshotShortcut
+        {
+            get => _screenshotShortcut;
+            set => SetValue(ref _screenshotShortcut, value);
+        }
+
+        public string InstantReplayShortcut
+        {
+            get => _instantReplayShortcut;
+            set => SetValue(ref _instantReplayShortcut, value);
+        }
+
+        /// <summary>
+        /// Suspend (freeze) the running game's process(es) while a full-screen overlay view such as the
+        /// achievement list is open; they are resumed when the view closes. Default ON.
+        /// </summary>
+        public bool SuspendGameInOverlayViews
+        {
+            get => _suspendGameInOverlayViews;
+            set => SetValue(ref _suspendGameInOverlayViews, value);
+        }
+
         // Backup values for cancel operation
         private ControllerShortcut _controllerShortcutBackup;
         private CloseBehavior _closeBehaviorBackup;
@@ -1010,7 +1322,6 @@ namespace PlayniteGameOverlay
         private bool _showPerformanceOverlayBackup;
         private bool _showScreenshotGalleryBackup;
         private bool _showWebBrowserBackup;
-        private bool _showDiscordBackup;
         private bool _showBatteryBackup;
         private string _recordGameplayShortcutBackup;
         private string _recordRecentShortcutBackup;
@@ -1018,6 +1329,11 @@ namespace PlayniteGameOverlay
         private string _performanceOverlayShortcutBackup;
         private string _screenshotGalleryPathBackup;
         private string _webBrowserPathBackup;
+        private bool _showScreenshotBackup;
+        private bool _showInstantReplayBackup;
+        private string _screenshotShortcutBackup;
+        private string _instantReplayShortcutBackup;
+        private bool _suspendGameInOverlayViewsBackup;
 
         // Parameterless constructor needed for serialization
         public OverlaySettings()
@@ -1097,8 +1413,28 @@ namespace PlayniteGameOverlay
                 {
                     ShowWebBrowser = false;
                 }
+                if (savedSettings.ShowScreenshot != null && savedSettings.ScreenshotShortcut != null)
+                {
+                    ShowScreenshot = savedSettings.ShowScreenshot;
+                    ScreenshotShortcut = savedSettings.ScreenshotShortcut;
+                }
+                else
+                {
+                    ShowScreenshot = false;
+                }
+                if (savedSettings.ShowInstantReplay != null && savedSettings.InstantReplayShortcut != null)
+                {
+                    ShowInstantReplay = savedSettings.ShowInstantReplay;
+                    InstantReplayShortcut = savedSettings.InstantReplayShortcut;
+                }
+                else
+                {
+                    ShowInstantReplay = false;
+                }
                 if (savedSettings.ShowBattery != null) ShowBattery = savedSettings.ShowBattery;
-                if (savedSettings.ShowDiscord != null) ShowDiscord = savedSettings.ShowDiscord;
+                // Missing in configs written by <= 0.4.5.2 -> stays at its default (true) from the
+                // parameterless constructor used by the JSON deserializer.
+                SuspendGameInOverlayViews = savedSettings.SuspendGameInOverlayViews;
             }
         }
 
@@ -1116,7 +1452,6 @@ namespace PlayniteGameOverlay
             _showPerformanceOverlayBackup = ShowPerformanceOverlay;
             _showScreenshotGalleryBackup = ShowScreenshotGallery;
             _showWebBrowserBackup = ShowWebBrowser;
-            _showDiscordBackup = ShowDiscord;
             _showBatteryBackup = ShowBattery;
 
             // Backup shortcut and path values
@@ -1126,6 +1461,11 @@ namespace PlayniteGameOverlay
             _performanceOverlayShortcutBackup = PerformanceOverlayShortcut;
             _screenshotGalleryPathBackup = ScreenshotGalleryPath;
             _webBrowserPathBackup = WebBrowserPath;
+            _showScreenshotBackup = ShowScreenshot;
+            _showInstantReplayBackup = ShowInstantReplay;
+            _screenshotShortcutBackup = ScreenshotShortcut;
+            _instantReplayShortcutBackup = InstantReplayShortcut;
+            _suspendGameInOverlayViewsBackup = SuspendGameInOverlayViews;
         }
 
         public void CancelEdit()
@@ -1142,7 +1482,6 @@ namespace PlayniteGameOverlay
             ShowPerformanceOverlay = _showPerformanceOverlayBackup;
             ShowScreenshotGallery = _showScreenshotGalleryBackup;
             ShowWebBrowser = _showWebBrowserBackup;
-            ShowDiscord = _showDiscordBackup;
             ShowBattery = _showBatteryBackup;
 
             // Restore shortcut and path backups
@@ -1152,6 +1491,11 @@ namespace PlayniteGameOverlay
             PerformanceOverlayShortcut = _performanceOverlayShortcutBackup;
             ScreenshotGalleryPath = _screenshotGalleryPathBackup;
             WebBrowserPath = _webBrowserPathBackup;
+            ShowScreenshot = _showScreenshotBackup;
+            ShowInstantReplay = _showInstantReplayBackup;
+            ScreenshotShortcut = _screenshotShortcutBackup;
+            InstantReplayShortcut = _instantReplayShortcutBackup;
+            SuspendGameInOverlayViews = _suspendGameInOverlayViewsBackup;
         }
 
         public void EndEdit()
@@ -1171,26 +1515,26 @@ namespace PlayniteGameOverlay
 
     public enum ControllerShortcut
     {
-        [Description("View + Menu (Back + Start)")]
+        [Description("Start + Back")]
         StartBack,
 
-        [Description("Xbox Button (Guide Button)")]
+        [Description("Guide (Xbox) button")]
         Guide,
 
-        [Description("None (Disabled)")]
+        [Description("Off")]
         None
     }
 
 
     public enum CloseBehavior
     {
-        [Description("Close Window (asking)")]
+        [Description("Ask the game to close")]
         CloseWindow,
 
-        [Description("End Task (telling)")]
+        [Description("Force the game to quit")]
         EndTask,
 
-        [Description("Close then End Task")]
+        [Description("Ask, then force quit")]
         CloseAndEnd
     }
 

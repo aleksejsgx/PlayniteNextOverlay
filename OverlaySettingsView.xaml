@@ -31,7 +31,7 @@
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
         <StackPanel Margin="20" MaxWidth="800">
-            <TextBlock Text="Game Overlay Settings" 
+            <TextBlock Text="Playnite Next Overlay" 
                    FontWeight="Bold" 
                    FontSize="16" 
                    Margin="0,0,0,15"/>
@@ -72,9 +72,9 @@
                 </ComboBox.ItemTemplate>
             </ComboBox>
 
-            <TextBlock Text="Note for using Guide Button for controller activation: Ensure you disable Guide Button detection in all other programs. Check Steam and Xbox GameBar settings and inside playnite, disable 'Show Playnite When Guide Button is Pressed'" TextWrapping="Wrap"
+            <TextBlock Text="If you use the Guide button to open the overlay, turn off Guide-button detection in Steam, Xbox Game Bar, and Playnite (the setting named Show Playnite when the Guide button is pressed)." TextWrapping="Wrap"
            Margin="0,0,0,20" Foreground="#888888" />
-            <TextBlock Text="Note: The keyboard shortcut is Alt + Backtick" 
+            <TextBlock Text="Keyboard shortcut: Alt+` (backtick, usually the key just left of 1)." 
            Margin="0,0,0,20" Foreground="#888888"/>
             <TextBlock Text="Cover Shape:" 
            Margin="0,0,0,5"/>
@@ -96,31 +96,43 @@
             <CheckBox IsChecked="{Binding DebugMode}" 
                   Content="Enable Debug Mode" 
                   Margin="0,10,0,5"/>
-            <TextBlock Text="Shows additional debugging information in the overlay. Useful if a game is not able to be exited. Also causes the overlay to output a LOAD of logs to the debugger console." 
+            <TextBlock Text="Shows extra information in the overlay when a game will not close, and writes a lot of messages to the debugger." 
                    Margin="0,0,0,15"
                    Foreground="#888888"/>
 
+            <TextBlock Text="Overlay views" FontSize="18" />
+            <CheckBox IsChecked="{Binding SuspendGameInOverlayViews}" 
+                  Content="Pause the game while the achievement list is open" 
+                  Margin="0,10,0,5"/>
+            <TextBlock Text="Pauses the running game while the full achievement list is open, and resumes it when you return to the main overlay, hide the overlay, quit the game, or close Playnite. Open the list by clicking the recent-achievement panel, or by selecting it and pressing A. Turn this off if a game misbehaves after being paused, for example if the audio glitches." 
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,20"
+                   Foreground="#888888"/>
+
             <TextBlock Text="Buttons" FontSize="18" />
-            <TextBlock 
-           Margin="0,0,0,15"
-           Foreground="#888888">
-            Keyboard shortcuts are written in SendKeys format. Ctrl is written as '^', Shift as '+', and Alt as '%'. See more info <Hyperlink NavigateUri="https://learn.microsoft.com/en-us/dotnet/api/system.windows.forms.sendkeys.send?view=windowsdesktop-9.0" RequestNavigate="Hyperlink_RequestNavigate">here</Hyperlink>
+            <TextBlock TextWrapping="Wrap" Margin="0,0,0,15" Foreground="#888888">
+                Shortcuts use SendKeys syntax: ^ is Ctrl, + is Shift, and % is Alt. Add {WIN} to hold the Windows key, which SendKeys cannot send on its own.
+                See the <Hyperlink NavigateUri="https://learn.microsoft.com/en-us/dotnet/api/system.windows.forms.sendkeys.send?view=windowsdesktop-9.0" RequestNavigate="Hyperlink_RequestNavigate">SendKeys reference</Hyperlink>.
+                A shortcut button appears only when its box is not empty.
+                A fresh install uses the NVIDIA App's standard keys. Leave the captures folder empty to open your Videos folder, and the browser path empty to open your default browser.
             </TextBlock>
 
-            <!-- Recording gameplay toggle -->
-            <CheckBox IsChecked="{Binding ShowDiscord}" 
-          Content="Show Discord Button" 
+            <!-- Screenshot toggle -->
+            <CheckBox IsChecked="{Binding ShowScreenshot}" 
+          Content="Show the Screenshot button" 
           Margin="0,10,0,5"/>
             <Grid Margin="20,0,0,15">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Note: Discord launches really weirdly so path is not customizable" Grid.Column="0" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                <TextBlock Text="Shortcut:" Grid.Column="0" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding ScreenshotShortcut}"/>
             </Grid>
 
             <!-- Recording gameplay toggle -->
             <CheckBox IsChecked="{Binding ShowRecordGameplay}" 
-          Content="Show Record Gameplay Button" 
+          Content="Show the Record button" 
           Margin="0,10,0,5"/>
             <Grid Margin="20,0,0,15">
                 <Grid.ColumnDefinitions>
@@ -131,9 +143,22 @@
                 <TextBox Grid.Column="1" Text="{Binding RecordGameplayShortcut}"/>
             </Grid>
 
+            <!-- Instant Replay (toggle) toggle -->
+            <CheckBox IsChecked="{Binding ShowInstantReplay}" 
+          Content="Show the Instant replay button" 
+          Margin="0,10,0,5"/>
+            <Grid Margin="20,0,0,15">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Shortcut:" Grid.Column="0" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding InstantReplayShortcut}"/>
+            </Grid>
+
             <!-- Record recent gameplay toggle -->
             <CheckBox IsChecked="{Binding ShowRecordRecent}" 
-          Content="Show Record Recent Gameplay Button" 
+          Content="Show the Recent clip button" 
           Margin="0,10,0,5"/>
             <Grid Margin="20,0,0,15">
                 <Grid.ColumnDefinitions>
@@ -146,7 +171,7 @@
 
             <!-- Streaming toggle -->
             <CheckBox IsChecked="{Binding ShowStreaming}" 
-          Content="Show Streaming Button" 
+          Content="Show the Stream button" 
           Margin="0,10,0,5"/>
             <Grid Margin="20,0,0,15">
                 <Grid.ColumnDefinitions>
@@ -159,7 +184,7 @@
 
             <!-- Performance overlay toggle -->
             <CheckBox IsChecked="{Binding ShowPerformanceOverlay}" 
-          Content="Show Performance Overlay Button" 
+          Content="Show the Performance button" 
           Margin="0,10,0,5"/>
             <Grid Margin="20,0,0,15">
                 <Grid.ColumnDefinitions>
@@ -172,27 +197,27 @@
 
             <!-- Screenshot gallery toggle -->
             <CheckBox IsChecked="{Binding ShowScreenshotGallery}" 
-          Content="Show Screenshot Gallery Button" 
+          Content="Show the Captures button" 
           Margin="0,10,0,5"/>
             <Grid Margin="20,0,0,15">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Directory:" Grid.Column="0" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                <TextBlock Text="Folder:" Grid.Column="0" Margin="0,0,10,0" VerticalAlignment="Center"/>
                 <TextBox Grid.Column="1" Text="{Binding ScreenshotGalleryPath}"/>
             </Grid>
 
             <!-- Web browser toggle -->
             <CheckBox IsChecked="{Binding ShowWebBrowser}" 
-          Content="Show Web Browser Button" 
+          Content="Show the Browser button" 
           Margin="0,10,0,5"/>
             <Grid Margin="20,0,0,15">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Browser Path:" Grid.Column="0" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                <TextBlock Text="Browser:" Grid.Column="0" Margin="0,0,10,0" VerticalAlignment="Center"/>
                 <TextBox Grid.Column="1" Text="{Binding WebBrowserPath}"/>
             </Grid>
         </StackPanel>

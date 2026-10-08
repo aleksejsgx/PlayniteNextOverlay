@@ -17,6 +17,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./PlayniteGameOverlay_fc75626e-ec69-4287-972a-b86298555ebb_1_0.pext
-          asset_name: PlayniteGameOverlay_fc75626e-ec69-4287-972a-b86298555ebb_1_0.pext
+          asset_path: ./PlayniteNextOverlay_1.0.0.pext
+          asset_name: PlayniteNextOverlay_1.0.0.pext
           asset_content_type: application/octet-stream

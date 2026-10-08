@@ -22,11 +22,108 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- ===== Achievement list styles ===== -->
+        <Style x:Key="AchHintBadge" TargetType="Border">
+            <Setter Property="Background" Value="#FF3A3A3A"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="6,1,6,1"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="AchHintText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#FFD0D0D0"/>
+        </Style>
+
+        <!-- Filter tabs: Tag is bound to "is this the active filter" -->
+        <Style x:Key="AchTabButton" TargetType="Button">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="#FFB0B0B0"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="TabBorder" Background="#FF262626" CornerRadius="8" Padding="16,7,16,7"
+                                BorderBrush="#40808080" BorderThickness="1">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="#FF333333"/>
+                            </Trigger>
+                            <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="#FFE8E8E8"/>
+                                <Setter Property="Foreground" Value="#FF141414"/>
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="AchActionButton" TargetType="Button">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ActBorder" Background="#FF2A2A2A" CornerRadius="8" Padding="12,7,14,7"
+                                BorderBrush="#40808080" BorderThickness="1">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ActBorder" Property="Background" Value="#FF3A3A3A"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ActBorder" Property="Background" Value="#FF4A4A4A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="AchListItemStyle" TargetType="ListBoxItem">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="12,10,14,10"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="ItemBorder" Background="#FF242424" CornerRadius="8" BorderThickness="2"
+                                BorderBrush="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#FF2C2C2C"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#FF363636"/>
+                                <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#C0FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Viewbox Stretch="Uniform">
         <!-- Set a container with fixed aspect ratio -->
         <Grid Width="1600" Height="900">
+            <!-- Main overlay layer (0.4.5.3: wrapped so it can be disabled = not focusable while the achievement list is open;
+                 children intentionally not re-indented to keep the diff small) -->
+            <Grid x:Name="MainLayer" IsEnabled="{Binding IsMainLayerEnabled}">
             <!-- Semi-transparent full-screen background -->
             <Rectangle Fill="#CC000000" Width="Auto" Height="Auto" />
 
@@ -250,9 +347,29 @@
                     BorderBrush="#40808080" BorderThickness="1,1,1,1"
                     Height="{Binding ActualHeight, ElementName=AchievementPanel}"
                     Visibility="{Binding HasAchievements, Converter={StaticResource BoolToVis}}"/>
-            <Border x:Name="AchievementPanel" Background="#FF242424" CornerRadius="10" Padding="20,16,20,16" 
-                    Width="377" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="40,510,0,0" BorderBrush="#80808080" BorderThickness="1,1,1,1"
-                    Visibility="{Binding HasAchievements, Converter={StaticResource BoolToVis}}">
+            <!-- 0.4.5.3: the panel is a Button so it is clickable (mouse/touchpad), takes part in the controller/keyboard
+                 focus navigation like the other overlay buttons and is activated with A / Enter / Space. -->
+            <Button x:Name="AchievementPanel" 
+                    Width="377" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="40,510,0,0"
+                    Visibility="{Binding HasAchievements, Converter={StaticResource BoolToVis}}"
+                    Command="{Binding OpenAchievementListCommand}" Cursor="Hand" FocusVisualStyle="{x:Null}">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="PanelBorder" Background="#FF242424" CornerRadius="10" Padding="20,16,20,16"
+                                BorderBrush="#80808080" BorderThickness="1,1,1,1">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="PanelBorder" Property="Background" Value="#FF363636"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="PanelBorder" Property="Background" Value="#FF363636"/>
+                                <Setter TargetName="PanelBorder" Property="BorderBrush" Value="#D0FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -264,7 +381,7 @@
                         <Border.Clip>
                             <RectangleGeometry RadiusX="4" RadiusY="4" Rect="0,0,32,32"/>
                         </Border.Clip>
-                        <Image x:Name="LastAchievementIcon" Stretch="UniformToFill" Width="32" Height="32" Source="{Binding LastAchievement.IconUrl}"/>
+                        <Image x:Name="LastAchievementIcon" Stretch="UniformToFill" Width="32" Height="32" Source="{Binding LastAchievementIcon}"/>
                     </Border>
 
                     <!-- Achievement Info -->
@@ -283,8 +400,12 @@
                                    Foreground="#FFD0D0D0" FontSize="12" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" 
                                    MaxHeight="36"/>
                     </StackPanel>
+
+                    <!-- "View all" hint -->
+                    <TextBlock Grid.Column="1" Text="VIEW ALL &#x203A;" FontSize="11" FontWeight="Bold" Foreground="#A0A0A0A0"
+                               HorizontalAlignment="Right" VerticalAlignment="Top"/>
                 </Grid>
-            </Border>
+            </Button>
 
             <TextBlock x:Name="UnlockPercent" Text="{Binding UnlockPercentText}" 
                        Visibility="{Binding HasAchievements, Converter={StaticResource BoolToVis}}" 
@@ -371,6 +492,262 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </Border>
+            </Grid>
+            <!-- end of MainLayer -->
+
+            <!-- ===== Achievement list layer (0.4.5.3): in-overlay view, same window, shown on top of MainLayer ===== -->
+            <Grid x:Name="AchievementListLayer" Visibility="{Binding IsAchievementListOpen, Converter={StaticResource BoolToVis}}">
+                <Rectangle Fill="#D0000000"/>
+                <Border Width="1180" Height="830" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="#FF1B1B1B" CornerRadius="12" BorderBrush="#80808080" BorderThickness="1" Padding="32,24,32,16">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header: game name + X/Y unlocked + percent -->
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Fill="#FFE0B040" Height="13" Width="14" Stretch="Uniform" VerticalAlignment="Center"
+                                          Data="M0 0.75c0-0.414 0.336-0.75 0.75-0.75h2.885c0.019 0 0.037 0.001 0.056 0.002h6.621c0.018-0.001 0.036-0.002 0.054-0.002H13.25c0.414 0 0.75 0.336 0.75 0.75V3.635c0 1.859-1.396 3.392-3.197 3.609-0.447 1.369-1.614 2.413-3.053 2.686V12.5h2.615c0.414 0 0.750 0.336 0.75 0.75s-0.336 0.75-0.75 0.75H7.026c-0.009 0-0.017 0-0.026 0s-0.017 0-0.026 0H3.635c-0.414 0-0.75-0.336-0.75-0.75s0.336-0.75 0.75-0.75H6.25V9.93c-1.439-0.273-2.605-1.317-3.053-2.686C1.396 7.027 0 5.494 0 3.635V0.75ZM2.885 5.634V1.5H1.5v2.135c0 0.915 0.576 1.696 1.385 1.999ZM11.115 1.5v4.134c0.809-0.304 1.385-1.084 1.385-1.999V1.5h-1.385Z"/>
+                                    <TextBlock Text="ACHIEVEMENTS" FontSize="13" FontWeight="Bold" Foreground="#FF9A9A9A" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding AchievementList.GameName}" FontSize="32" FontWeight="Bold" Foreground="White"
+                                           TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="24,0,0,0">
+                                <TextBlock Text="{Binding AchievementList.PercentText}" FontSize="36" FontWeight="Bold" Foreground="White" HorizontalAlignment="Right"/>
+                                <TextBlock Text="{Binding AchievementList.SummaryText}" FontSize="15" Foreground="#FFD0D0D0" HorizontalAlignment="Right"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Progress bar -->
+                        <ProgressBar Grid.Row="1" Height="6" Margin="0,14,0,16" Minimum="0" Maximum="100"
+                                     Value="{Binding AchievementList.Percent, Mode=OneWay}"
+                                     Foreground="#FFE0B040" Background="#FF333333" BorderThickness="0"/>
+
+                        <!-- Filter tabs + actions -->
+                        <Grid Grid.Row="2" Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <Border Style="{StaticResource AchHintBadge}">
+                                    <TextBlock Text="LB" Style="{StaticResource AchHintText}"/>
+                                </Border>
+                                <Button x:Name="AchTabAll" Style="{StaticResource AchTabButton}" Content="{Binding AchievementList.AllTabText}"
+                                        Tag="{Binding AchievementList.IsFilterAll}" Command="{Binding AchievementList.SetFilterCommand}" CommandParameter="All"/>
+                                <Button x:Name="AchTabUnlocked" Style="{StaticResource AchTabButton}" Content="{Binding AchievementList.UnlockedTabText}"
+                                        Tag="{Binding AchievementList.IsFilterUnlocked}" Command="{Binding AchievementList.SetFilterCommand}" CommandParameter="Unlocked"/>
+                                <Button x:Name="AchTabLocked" Style="{StaticResource AchTabButton}" Content="{Binding AchievementList.LockedTabText}"
+                                        Tag="{Binding AchievementList.IsFilterLocked}" Command="{Binding AchievementList.SetFilterCommand}" CommandParameter="Locked"/>
+                                <Border Style="{StaticResource AchHintBadge}">
+                                    <TextBlock Text="RB" Style="{StaticResource AchHintText}"/>
+                                </Border>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding AchievementList.ShowingText}" FontSize="13" Foreground="#FF808080"
+                                       VerticalAlignment="Center" Margin="12,0,12,0"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                <Button Style="{StaticResource AchActionButton}" Command="{Binding AchievementList.ToggleRevealHiddenCommand}"
+                                        Visibility="{Binding AchievementList.HasHiddenLocked, Converter={StaticResource BoolToVis}}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Style="{StaticResource AchHintBadge}">
+                                            <TextBlock Text="Y" Style="{StaticResource AchHintText}"/>
+                                        </Border>
+                                        <TextBlock Text="{Binding AchievementList.RevealHiddenText}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource AchActionButton}" Command="{Binding CloseAchievementListCommand}" Margin="10,0,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Style="{StaticResource AchHintBadge}">
+                                            <TextBlock Text="B" Style="{StaticResource AchHintText}"/>
+                                        </Border>
+                                        <TextBlock Text="Back" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- The list: virtualized, recycled containers, icons loaded lazily per realized row -->
+                        <Grid Grid.Row="3">
+                            <ListBox x:Name="AchievementListBox"
+                                     ItemsSource="{Binding AchievementList.Items}"
+                                     ItemContainerStyle="{StaticResource AchListItemStyle}"
+                                     Background="Transparent" BorderThickness="0" Padding="0,0,4,0"
+                                     SelectionMode="Single" FocusVisualStyle="{x:Null}"
+                                     KeyboardNavigation.DirectionalNavigation="None"
+                                     KeyboardNavigation.TabNavigation="None"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     ScrollViewer.CanContentScroll="True"
+                                     ScrollViewer.PanningMode="VerticalOnly"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling"
+                                     VirtualizingPanel.ScrollUnit="Pixel"
+                                     VirtualizingPanel.CacheLengthUnit="Item"
+                                     VirtualizingPanel.CacheLength="3,3">
+                                <ListBox.Resources>
+                                    <!-- slim dark scrollbar (drag the thumb with mouse/touchpad) -->
+                                    <Style TargetType="ScrollBar">
+                                        <Setter Property="Width" Value="8"/>
+                                        <Setter Property="MinWidth" Value="8"/>
+                                        <Setter Property="Margin" Value="6,0,0,0"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ScrollBar">
+                                                    <Border Background="#20FFFFFF" CornerRadius="4">
+                                                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                                            <Track.Thumb>
+                                                                <Thumb>
+                                                                    <Thumb.Template>
+                                                                        <ControlTemplate TargetType="Thumb">
+                                                                            <Border Background="#90FFFFFF" CornerRadius="4" MinHeight="40"/>
+                                                                        </ControlTemplate>
+                                                                    </Thumb.Template>
+                                                                </Thumb>
+                                                            </Track.Thumb>
+                                                        </Track>
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.Resources>
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel/>
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid MinHeight="64">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="64"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- Icon (greyscale + dimmed when locked and no real locked icon exists) -->
+                                            <Grid Grid.Column="0" Width="64" Height="64" VerticalAlignment="Center">
+                                                <Border CornerRadius="6" Background="#40808080">
+                                                    <Border.Clip>
+                                                        <RectangleGeometry RadiusX="6" RadiusY="6" Rect="0,0,64,64"/>
+                                                    </Border.Clip>
+                                                    <Image Source="{Binding Icon}" Opacity="{Binding IconOpacity}" Stretch="UniformToFill"
+                                                           Width="64" Height="64" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                </Border>
+                                                <Border Visibility="{Binding IsLocked, Converter={StaticResource BoolToVis}}" Background="#D0000000"
+                                                        CornerRadius="10" Width="20" Height="20" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,3,3">
+                                                    <Path Fill="#FFD0D0D0" Width="10" Height="11" Stretch="Uniform"
+                                                          Data="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z"/>
+                                                </Border>
+                                            </Grid>
+
+                                            <!-- Name / description / rarity -->
+                                            <StackPanel Grid.Column="1" Margin="16,0,16,0" VerticalAlignment="Center">
+                                                <TextBlock FontSize="18" FontWeight="Bold" TextTrimming="CharacterEllipsis">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="White"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsUnlocked}" Value="False">
+                                                                    <Setter Property="Foreground" Value="#FFB8B8B8"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                    <Run Text="{Binding Name, Mode=OneWay}"/>
+                                                    <InlineUIContainer BaselineAlignment="Center">
+                                                        <Border Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}" Background="#FF3A2F55"
+                                                                CornerRadius="4" Padding="6,1,6,1" Margin="8,0,0,0">
+                                                            <TextBlock Text="SECRET" FontSize="10" FontWeight="Bold" Foreground="#FFC8B8FF"/>
+                                                        </Border>
+                                                    </InlineUIContainer>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding DisplayDescription}" FontSize="14" TextWrapping="Wrap"
+                                                           TextTrimming="CharacterEllipsis" MaxHeight="40" Margin="0,3,0,0">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="#FFD0D0D0"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsConcealed}" Value="True">
+                                                                    <Setter Property="FontStyle" Value="Italic"/>
+                                                                    <Setter Property="Foreground" Value="#FF8C8C8C"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding RarityText}" Foreground="{Binding RarityColor}" FontSize="12" Margin="0,4,0,0"
+                                                           Visibility="{Binding HasRarity, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+
+                                            <!-- Status: unlock date / locked + progress -->
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" MinWidth="190">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                    <Path Fill="#FF7FC97F" Width="13" Height="13" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                          Visibility="{Binding IsUnlocked, Converter={StaticResource BoolToVis}}"
+                                                          Data="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
+                                                    <TextBlock Text="{Binding StatusText}" FontSize="14">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="#FF7FC97F"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsUnlocked}" Value="False">
+                                                                        <Setter Property="Foreground" Value="#FF8C8C8C"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding ProgressText}" FontSize="12" Foreground="#FFB0B0B0" HorizontalAlignment="Right" Margin="0,3,0,0"
+                                                           Visibility="{Binding HasProgress, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <TextBlock Text="{Binding AchievementList.EmptyText}" FontSize="18" Foreground="#FF9A9A9A"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="{Binding AchievementList.IsEmpty, Converter={StaticResource BoolToVis}}"/>
+                        </Grid>
+
+                        <!-- Footer: control hints + game pause state -->
+                        <Grid Grid.Row="4" Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock FontSize="12" Foreground="#FF8A8A8A" TextWrapping="Wrap"
+                                           Text="Controller: D-pad or stick to move (hold to repeat). Left and Right page. LT and RT jump to the ends. LB, RB, or X filters. Y reveals secrets. B goes back."/>
+                                <TextBlock FontSize="12" Foreground="#FF6A6A6A" TextWrapping="Wrap" Margin="0,2,0,0"
+                                           Text="Keyboard and mouse: arrow keys, Page Up and Page Down, Home and End. Left, Right, or Tab filters. H reveals secrets. Esc or Backspace goes back. Use the wheel to scroll."/>
+                            </StackPanel>
+                            <Border Grid.Column="1" Visibility="{Binding HasGamePauseStatus, Converter={StaticResource BoolToVis}}"
+                                    Background="#FF2C2C2C" CornerRadius="6" Padding="10,4,10,4" Margin="12,0,0,0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Fill="#FFE0B040" Width="11" Height="12" Stretch="Uniform" Margin="0,0,7,0" VerticalAlignment="Center"
+                                          Data="M6,19H10V5H6V19M14,5V19H18V5H14Z"/>
+                                    <TextBlock Text="{Binding GamePauseStatus}" FontSize="12" Foreground="White"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
         </Grid>
     </Viewbox>
 </Window>

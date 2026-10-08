@@ -191,6 +191,36 @@ namespace PlayniteGameOverlay
             set { _hasAchievements = value; OnPropertyChanged(); }
         }
 
+        // ---- Full achievement list view (0.4.5.3) ----
+        private bool _isAchievementListOpen;
+        private string _gamePauseStatus;
+
+        /// <summary>Data of the in-overlay achievement list (filled only while the list is open).</summary>
+        public AchievementListViewModel AchievementList { get; } = new AchievementListViewModel();
+
+        public bool IsAchievementListOpen
+        {
+            get => _isAchievementListOpen;
+            set
+            {
+                _isAchievementListOpen = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsMainLayerEnabled));
+            }
+        }
+
+        /// <summary>The main overlay (buttons etc.) is disabled - and therefore not focusable - while the list is open.</summary>
+        public bool IsMainLayerEnabled => !_isAchievementListOpen;
+
+        /// <summary>"Game paused" / "Game not paused (...)" shown in the list footer; null hides it.</summary>
+        public string GamePauseStatus
+        {
+            get => _gamePauseStatus;
+            set { _gamePauseStatus = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasGamePauseStatus)); }
+        }
+
+        public bool HasGamePauseStatus => !string.IsNullOrEmpty(_gamePauseStatus);
+
         public bool HasBattery
         {
             get => _hasBattery;
@@ -200,7 +230,53 @@ namespace PlayniteGameOverlay
         public AchievementData LastAchievement
         {
             get => _lastAchievement;
-            set { _lastAchievement = value; OnPropertyChanged(); }
+            set
+            {
+                _lastAchievement = value;
+                _lastAchievementIcon = CreateIcon(value?.IconUrl);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(LastAchievementTimeText));
+                OnPropertyChanged(nameof(LastAchievementIcon));
+            }
+        }
+
+        private System.Windows.Media.ImageSource _lastAchievementIcon;
+
+        /// <summary>
+        /// Icon for the last achievement. Local files (e.g. Playnite Achievements' icon_cache) are
+        /// loaded fully into memory so the overlay never keeps the file locked; http(s) URLs are
+        /// downloaded by WPF as before.
+        /// </summary>
+        public System.Windows.Media.ImageSource LastAchievementIcon => _lastAchievementIcon;
+
+        private static System.Windows.Media.ImageSource CreateIcon(string iconUrl)
+        {
+            if (string.IsNullOrWhiteSpace(iconUrl))
+                return null;
+            try
+            {
+                Uri uri;
+                if (iconUrl.StartsWith("/") && iconUrl.IndexOf(";component/", StringComparison.OrdinalIgnoreCase) > 0)
+                    uri = new Uri("pack://application:,,," + iconUrl, UriKind.Absolute);
+                else if (System.IO.Path.IsPathRooted(iconUrl) && !iconUrl.Contains("://"))
+                    uri = new Uri(iconUrl, UriKind.Absolute);
+                else if (!Uri.TryCreate(iconUrl, UriKind.Absolute, out uri))
+                    return null;
+
+                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.UriSource = uri;
+                bmp.DecodePixelWidth = 64;
+                if (uri.IsFile)
+                    bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bmp.EndInit();
+                return bmp;
+            }
+            catch (Exception ex)
+            {
+                logger.Warn($"Could not load achievement icon '{iconUrl}': {ex.Message}");
+                return null;
+            }
         }
 
         public string LastAchievementTimeText { 
@@ -238,12 +314,16 @@ namespace PlayniteGameOverlay
         public ICommand ShowPlayniteCommand { get; }
         public ICommand CloseGameCommand { get; }
         public ICommand ShortcutButtonCommand { get; }
+        public ICommand OpenAchievementListCommand { get; }
+        public ICommand CloseAchievementListCommand { get; }
 
         // Event for showing Playnite
         public event Action<bool> ShowPlayniteRequested;
         public event Action HideOverlayRequested;
         public event Action CloseGameRequested;
         public event Action<ShortcutButtonViewModel> ExecuteShortcutRequested;
+        public event Action OpenAchievementListRequested;
+        public event Action CloseAchievementListRequested;
 
         // Constructor with design-time data support
         public OverlayWindowViewModel(bool designMode = false)
@@ -255,6 +335,12 @@ namespace PlayniteGameOverlay
             ShowPlayniteCommand = new RelayCommand(_ => ShowPlayniteRequested?.Invoke(false));
             CloseGameCommand = new RelayCommand(_ => CloseGameRequested?.Invoke());
             ShortcutButtonCommand = new RelayCommand(ExecuteShortcut);
+            OpenAchievementListCommand = new RelayCommand(_ =>
+            {
+                if (HasAchievements && !IsAchievementListOpen)
+                    OpenAchievementListRequested?.Invoke();
+            });
+            CloseAchievementListCommand = new RelayCommand(_ => CloseAchievementListRequested?.Invoke());
 
             if (designMode || System.ComponentModel.DesignerProperties.GetIsInDesignMode(new DependencyObject()))
             {
@@ -275,19 +361,20 @@ namespace PlayniteGameOverlay
                 {
                     Name = "Sample Achievement",
                     Description = "This is a sample achievement description for design-time display.",
-                    IconUrl = "/PlayniteGameOverlay;component/assets/achievement.png"
+                    IconUrl = "/PlayniteNextOverlay;component/assets/achievement.png"
                 };
 
                 // Add sample shortcut buttons
                 InitializeShortcutButtons(new OverlaySettings
                 {
+                    ShowScreenshot = true,
                     ShowRecordGameplay = true,
+                    ShowInstantReplay = true,
                     ShowRecordRecent = true,
                     ShowStreaming = true,
                     ShowPerformanceOverlay = true,
                     ShowScreenshotGallery = true,
-                    ShowWebBrowser = true,
-                    ShowDiscord = true
+                    ShowWebBrowser = true
                 });
             }
         }
@@ -324,8 +411,8 @@ namespace PlayniteGameOverlay
                     {
                         unlockedCount++;
                         if (lastUnlocked == null ||
-                            (achievement.UnlockDate.HasValue && lastUnlocked.UnlockDate.HasValue &&
-                             achievement.UnlockDate > lastUnlocked.UnlockDate))
+                            (achievement.UnlockDate.HasValue &&
+                             (!lastUnlocked.UnlockDate.HasValue || achievement.UnlockDate > lastUnlocked.UnlockDate)))
                         {
                             lastUnlocked = achievement;
                         }
@@ -388,59 +475,82 @@ namespace PlayniteGameOverlay
         {
             ShortcutButtons.Clear();
 
-            // Add buttons based on settings
-            if (settings.ShowRecordGameplay)
+            // A keyboard button is shown only when its shortcut is filled in.
+            if (settings.ShowScreenshot && !string.IsNullOrWhiteSpace(settings.ScreenshotShortcut))
             {
                 ShortcutButtons.Add(new ShortcutButtonViewModel
                 {
-                    Title = "Record Gameplay",
-                    IconPath = "/PlayniteGameOverlay;component/assets/record.png",
+                    Title = "Screenshot",
+                    IconPath = "/PlayniteNextOverlay;component/assets/camera.png",
+                    ShortcutCommand = settings.ScreenshotShortcut,
+                    Type = ShortcutType.KbdShortcut,
+                });
+            }
+
+            if (settings.ShowRecordGameplay && !string.IsNullOrWhiteSpace(settings.RecordGameplayShortcut))
+            {
+                ShortcutButtons.Add(new ShortcutButtonViewModel
+                {
+                    Title = "Record",
+                    IconPath = "/PlayniteNextOverlay;component/assets/record.png",
                     ShortcutCommand = settings.RecordGameplayShortcut,
                     Type = ShortcutType.KbdShortcut,
                 });
             }
 
-            if (settings.ShowRecordRecent)
+            if (settings.ShowInstantReplay && !string.IsNullOrWhiteSpace(settings.InstantReplayShortcut))
             {
                 ShortcutButtons.Add(new ShortcutButtonViewModel
                 {
-                    Title = "Record Last 30s",
-                    IconPath = "/PlayniteGameOverlay;component/assets/record-recent.png",
+                    Title = "Instant replay",
+                    IconPath = "/PlayniteNextOverlay;component/assets/instant-replay.png",
+                    ShortcutCommand = settings.InstantReplayShortcut,
+                    Type = ShortcutType.KbdShortcut,
+                });
+            }
+
+            if (settings.ShowRecordRecent && !string.IsNullOrWhiteSpace(settings.RecordRecentShortcut))
+            {
+                ShortcutButtons.Add(new ShortcutButtonViewModel
+                {
+                    Title = "Recent clip",
+                    IconPath = "/PlayniteNextOverlay;component/assets/record-recent.png",
                     ShortcutCommand = settings.RecordRecentShortcut,
                     Type = ShortcutType.KbdShortcut,
                 });
             }
 
-            if (settings.ShowStreaming)
+            if (settings.ShowStreaming && !string.IsNullOrWhiteSpace(settings.StreamingShortcut))
             {
                 ShortcutButtons.Add(new ShortcutButtonViewModel
                 {
-                    Title = "Streaming",
-                    IconPath = "/PlayniteGameOverlay;component/assets/stream.png",
+                    Title = "Stream",
+                    IconPath = "/PlayniteNextOverlay;component/assets/stream.png",
                     ShortcutCommand = settings.StreamingShortcut,
                     Type = ShortcutType.KbdShortcut,
                 });
             }
 
-            if (settings.ShowPerformanceOverlay)
+            if (settings.ShowPerformanceOverlay && !string.IsNullOrWhiteSpace(settings.PerformanceOverlayShortcut))
             {
                 ShortcutButtons.Add(new ShortcutButtonViewModel
                 {
                     Title = "Performance",
-                    IconPath = "/PlayniteGameOverlay;component/assets/performance.png",
+                    IconPath = "/PlayniteNextOverlay;component/assets/performance.png",
                     ShortcutCommand = settings.PerformanceOverlayShortcut,
                     Type = ShortcutType.KbdShortcut,
                 });
             }
 
+            // An empty folder opens the Videos folder. An empty browser path opens the default browser.
             if (settings.ShowScreenshotGallery)
             {
                 ShortcutButtons.Add(new ShortcutButtonViewModel
                 {
-                    Title = "Screenshots",
-                    IconPath = "/PlayniteGameOverlay;component/assets/screenshot.png",
+                    Title = "Captures",
+                    IconPath = "/PlayniteNextOverlay;component/assets/screenshot.png",
                     ShortcutCommand = settings.ScreenshotGalleryPath,
-                    Type = ShortcutType.Path,
+                    Type = ShortcutType.Gallery,
                 });
             }
 
@@ -448,21 +558,10 @@ namespace PlayniteGameOverlay
             {
                 ShortcutButtons.Add(new ShortcutButtonViewModel
                 {
-                    Title = "Web Browser",
-                    IconPath = "/PlayniteGameOverlay;component/assets/browser.png",
+                    Title = "Browser",
+                    IconPath = "/PlayniteNextOverlay;component/assets/browser.png",
                     ShortcutCommand = settings.WebBrowserPath,
-                    Type = ShortcutType.Path,
-                });
-            }
-
-            if (settings.ShowDiscord)
-            {
-                ShortcutButtons.Add(new ShortcutButtonViewModel
-                {
-                    Title = "Discord",
-                    IconPath = "/PlayniteGameOverlay;component/assets/discord.png",
-                    ShortcutCommand = "discord",
-                    Type = ShortcutType.Discord
+                    Type = ShortcutType.Browser,
                 });
             }
         }
@@ -486,8 +585,8 @@ namespace PlayniteGameOverlay
 
     public enum ShortcutType
     {
-        Discord,
-        Path,
+        Gallery,
+        Browser,
         KbdShortcut
     }
 

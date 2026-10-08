@@ -1,0 +1,19 @@
+# Playnite add-on database entry.
+# Repository URL: see REPOSITORY.url (keep this file in sync with it).
+AddonId: PlayniteNextOverlay_fc70f846-3640-46f0-9f86-5f0b991ca4aa
+Type: Generic
+InstallerManifestUrl: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/release/1.0/installer-manifest.yaml
+Tags: [overlay, handheld, gaming, achievements, battery, controller, steamdeck, rogally]
+ShortDescription: 'An in-game overlay for Playnite with capture buttons, a controller-friendly achievement list, and an optional pause while that list is open.'
+Name: 'Playnite Next Overlay'
+Author: 'AleksejSg'
+SourceUrl: https://github.com/aleksejsgx/PlayniteNextOverlay
+Links:
+  Website: https://github.com/aleksejsgx/PlayniteNextOverlay
+Screenshots:
+  - Thumbnail: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/release/1.0/docs/screenshots/overlay-main.png
+    Image: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/release/1.0/docs/screenshots/overlay-main.png
+  - Thumbnail: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/release/1.0/docs/screenshots/achievements-all.png
+    Image: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/release/1.0/docs/screenshots/achievements-all.png
+  - Thumbnail: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/release/1.0/docs/screenshots/achievements-locked.png
+    Image: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/release/1.0/docs/screenshots/achievements-locked.png
