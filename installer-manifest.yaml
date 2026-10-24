@@ -1,6 +1,16 @@
 # Repository URL: see REPOSITORY.url (keep this file in sync with it).
 AddonId: PlayniteNextOverlay_fc70f846-3640-46f0-9f86-5f0b991ca4aa
 Packages:
+  - Version: 1.0.4
+    RequiredApiVersion: 6.12.0.0
+    ReleaseDate: 2026-10-24
+    PackageUrl: https://github.com/aleksejsgx/PlayniteNextOverlay/releases/download/v1.0.4/PlayniteNextOverlay_1.0.4.pext
+    Changelog:
+      - Controller support in Desktop Mode, Start+Back (or Guide) opens the overlay outside Fullscreen too.
+      - The controller works while a game has the focus and Playnite is in the background.
+      - Custom controller combination in settings (2 or 3 buttons), default Start+Back.
+      - Version number in the overlay and in settings, with a Check for updates link.
+      - Moonlight/Sunshine streaming support (experimental), feedback welcome.
   - Version: 1.0.0
     RequiredApiVersion: 6.12.0.0
     ReleaseDate: 2026-10-09
