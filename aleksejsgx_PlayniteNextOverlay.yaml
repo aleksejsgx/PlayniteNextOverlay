@@ -11,9 +11,7 @@ SourceUrl: https://github.com/aleksejsgx/PlayniteNextOverlay
 Links:
   Website: https://github.com/aleksejsgx/PlayniteNextOverlay
 Screenshots:
-  - Thumbnail: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/main/docs/screenshots/overlay-main.png
+  - Thumbnail: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/main/docs/screenshots/overlay-main-thumb.png
     Image: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/main/docs/screenshots/overlay-main.png
-  - Thumbnail: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/main/docs/screenshots/achievements-all.png
-    Image: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/main/docs/screenshots/achievements-all.png
-  - Thumbnail: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/main/docs/screenshots/achievements-locked.png
-    Image: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/main/docs/screenshots/achievements-locked.png
+  - Thumbnail: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/main/docs/screenshots/achievements-list-thumb.png
+    Image: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/main/docs/screenshots/achievements-list.png
