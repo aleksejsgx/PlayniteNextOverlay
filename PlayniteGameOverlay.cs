@@ -72,106 +72,189 @@ namespace PlayniteGameOverlay
         }
 
 
+        // Controller input.
+        // Playnite raises OnControllerButtonStateChanged only from its Fullscreen app, so up to 1.0.0 the
+        // controller did nothing in Desktop Mode. XInput pads are now read directly by
+        // XInputControllerListener (Desktop, Fullscreen and while a game has the focus); the Playnite
+        // events are still used for pads XInput cannot see (e.g. a DualSense without Steam Input) in Fullscreen.
+        private XInputControllerListener xinputListener;
+        private bool shortcutArmed = true;                 // re-armed once Start/Back (or Guide) are released
+        private DateTime lastShortcutTime = DateTime.MinValue;
+        private const int ShortcutCooldownMs = 600;
+
         public override void OnControllerButtonStateChanged(OnControllerButtonStateChangedArgs args)
         {
-            var mostRecentPress = controllerState.Update(args);
-            var startBackCombo = false;
-            var guideActivated = false;
+            if (args == null)
+                return;
 
-            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            // The same XInput pad is reported again by Playnite Fullscreen: skip it so nothing fires twice.
+            if (xinputListener != null && xinputListener.HasActiveController)
+                return;
+
+            QueueControllerInput(args.Button, args.State == ControllerInputState.Pressed, "SDL");
+        }
+
+        private void OnXInputButtonChanged(ControllerInput button, bool pressed)
+        {
+            QueueControllerInput(button, pressed, "XINPUT");
+        }
+
+        private void StartControllerListener()
+        {
+            try
             {
-                if (overlayWindow != null && overlayWindow.IsActive)
+                if (xinputListener == null)
                 {
-                    // Log all controller actions
-                    log($"Window Recieved {args.State.ToString()}: {args.Button.ToString()}", "SDL_INPUT");
-
-                    // Achievement list view has its own controls (needs releases too, for hold-to-repeat)
-                    if (overlayWindow.IsAchievementListOpen)
-                    {
-                        overlayWindow.HandleAchievementListInput(args.Button, args.State == ControllerInputState.Pressed);
-                        return;
-                    }
-
-                    // ignore releases
-                    if (mostRecentPress == null)
-                        return;
-
-                    switch (mostRecentPress)
-                    {
-                        case ControllerInput.DPadUp:
-                        case ControllerInput.LeftStickUp:
-                            log("Navigating UP", "SDL_NAV");
-                            overlayWindow.FocusUp();
-                            break;
-                        case ControllerInput.DPadDown:
-                        case ControllerInput.LeftStickDown:
-                            log("Navigating DOWN", "SDL_NAV");
-                            overlayWindow.FocusDown();
-                            break;
-                        case ControllerInput.DPadLeft:
-                        case ControllerInput.LeftStickLeft:
-                            log("Navigating LEFT", "SDL_NAV");
-                            overlayWindow.FocusLeft();
-                            break;
-                        case ControllerInput.DPadRight:
-                        case ControllerInput.LeftStickRight:
-                            log("Navigating RIGHT", "SDL_NAV");
-                            overlayWindow.FocusRight();
-                            break;
-                        case ControllerInput.A:
-                            log("Button A pressed - clicking focused element", "SDL_NAV");
-                            overlayWindow.ClickFocusedElement();
-                            break;
-                        case ControllerInput.B:
-                            log("Button B pressed - Hiding overlay", "SDL_NAV");
-                            overlayWindow.Hide();
-                            break;
-                    }
+                    xinputListener = new XInputControllerListener(logger);
+                    xinputListener.ButtonChanged += OnXInputButtonChanged;
                 }
+                xinputListener.Start();
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Could not start the XInput controller listener: {ex}");
+            }
+        }
+
+        private void StopControllerListener()
+        {
+            try
+            {
+                if (xinputListener != null)
+                {
+                    xinputListener.ButtonChanged -= OnXInputButtonChanged;
+                    xinputListener.Dispose();
+                    xinputListener = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Warn($"Error stopping the XInput controller listener: {ex.Message}");
+            }
+        }
+
+        // Both sources end up here; the actual handling always runs on the UI thread, in arrival order.
+        private void QueueControllerInput(ControllerInput button, bool pressed, string source)
+        {
+            var app = System.Windows.Application.Current;
+            if (app == null)
+                return;
+            app.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    HandleControllerInput(button, pressed, source);
+                }
+                catch (Exception ex)
+                {
+                    logger.Error($"Error handling controller input {button} ({source}): {ex}");
+                }
+            }));
+        }
+
+        private void HandleControllerInput(ControllerInput button, bool pressed, string source)
+        {
+            var mostRecentPress = controllerState.Update(button, pressed);
+
+            // Re-arm the shortcut once its buttons are released, so holding them never toggles repeatedly.
+            if (!controllerState.ButtonStart || !controllerState.ButtonBack)
+            {
+                if (Settings.ControllerShortcut != ControllerShortcut.Guide || !controllerState.ButtonGuide)
+                    shortcutArmed = true;
+            }
+
+            if (overlayWindow == null)
+                return;
+
+            if (overlayWindow.IsActive)
+            {
+                // Log all controller actions
+                log($"Window Recieved {(pressed ? "Pressed" : "Released")}: {button} ({source})", "CTRL_INPUT");
+
+                // Achievement list view has its own controls (needs releases too, for hold-to-repeat)
+                if (overlayWindow.IsAchievementListOpen)
+                {
+                    overlayWindow.HandleAchievementListInput(button, pressed);
+                    return;
+                }
+
+                // ignore releases
+                if (mostRecentPress == null)
+                    return;
+
+                switch (mostRecentPress)
+                {
+                    case ControllerInput.DPadUp:
+                    case ControllerInput.LeftStickUp:
+                        log("Navigating UP", "CTRL_NAV");
+                        overlayWindow.FocusUp();
+                        break;
+                    case ControllerInput.DPadDown:
+                    case ControllerInput.LeftStickDown:
+                        log("Navigating DOWN", "CTRL_NAV");
+                        overlayWindow.FocusDown();
+                        break;
+                    case ControllerInput.DPadLeft:
+                    case ControllerInput.LeftStickLeft:
+                        log("Navigating LEFT", "CTRL_NAV");
+                        overlayWindow.FocusLeft();
+                        break;
+                    case ControllerInput.DPadRight:
+                    case ControllerInput.LeftStickRight:
+                        log("Navigating RIGHT", "CTRL_NAV");
+                        overlayWindow.FocusRight();
+                        break;
+                    case ControllerInput.A:
+                        log("Button A pressed - clicking focused element", "CTRL_NAV");
+                        overlayWindow.ClickFocusedElement();
+                        break;
+                    case ControllerInput.B:
+                        log("Button B pressed - Hiding overlay", "CTRL_NAV");
+                        overlayWindow.Hide();
+                        break;
+                }
+                return;
+            }
+
+            // We only want to process presses, not releases
+            if (mostRecentPress == null)
+                return;
+
+            // For Start+Back combination or Guide button handling
+            if (mostRecentPress != ControllerInput.Start && mostRecentPress != ControllerInput.Back && mostRecentPress != ControllerInput.Guide)
+                return;
+
+            log($"Background Listener Recieved Pressed: {button} ({source})", "CTRL_INPUT");
+
+            bool startBackCombo = Settings.ControllerShortcut == ControllerShortcut.StartBack &&
+                                  controllerState.ButtonStart && controllerState.ButtonBack;
+            bool guideActivated = Settings.ControllerShortcut == ControllerShortcut.Guide &&
+                                  controllerState.ButtonGuide;
+
+            log($"sb:{startBackCombo}, g:{guideActivated}, armed:{shortcutArmed}");
+            if (!startBackCombo && !guideActivated)
+                return;
+
+            // Debounce: one toggle per press of the combo, and never two within the cooldown.
+            if (!shortcutArmed || (DateTime.UtcNow - lastShortcutTime).TotalMilliseconds < ShortcutCooldownMs)
+                return;
+            shortcutArmed = false;
+            lastShortcutTime = DateTime.UtcNow;
+
+            var runningGame = playniteAPI.Database.Games.FirstOrDefault(g => g.IsRunning);
+            if (runningGame != null)
+            {
+                if (overlayWindow.IsVisible)
+                    overlayWindow.Hide();
                 else
-                {
-                    log($"Background Listener Recieved {args.State.ToString()}: {args.Button.ToString()}", "SDL_INPUT");
-                    // We only want to process pressed events, not repeated or released
-                    if (mostRecentPress == null)
-                        return;
-
-                    // For Start+Back combination or Guide button handling
-                    if (mostRecentPress == ControllerInput.Start || mostRecentPress == ControllerInput.Back || mostRecentPress == ControllerInput.Guide)
-                    {
-                        // Check for Start+Back combination
-                        startBackCombo = Settings.ControllerShortcut == ControllerShortcut.StartBack &&
-                                             controllerState.ButtonStart && controllerState.ButtonBack;
-
-                        // Check for Guide press
-                        guideActivated = Settings.ControllerShortcut == ControllerShortcut.Guide &&
-                                             controllerState.ButtonGuide;
-
-                        log($"sb:{startBackCombo}, g:{guideActivated}");
-                        // Process the shortcut if either condition is met
-                        if (startBackCombo || guideActivated)
-                        {
-                            // Use Application.Current.Dispatcher to ensure UI operations happen on the UI thread
-                            System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() =>
-                            {
-                                var runningGame = playniteAPI.Database.Games.FirstOrDefault(g => g.IsRunning);
-                                if (runningGame != null)
-                                {
-                                    if (overlayWindow.IsVisible)
-                                        overlayWindow.Hide();
-                                    else
-                                        ShowGameOverlay(runningGame);
-                                }
-                                else
-                                {
-                                    ShowPlaynite(true);
-                                }
-                            }));
-                        }
-                    }
-
-
-                }
-            });
+                    ShowGameOverlay(runningGame);
+            }
+            else
+            {
+                // No game running: bring Playnite to the front in the mode it is running in
+                // (Fullscreen keeps the 1.0.0 behavior; Desktop is no longer switched to Fullscreen).
+                ShowPlaynite(playniteAPI.ApplicationInfo.Mode == ApplicationMode.Fullscreen);
+            }
         }
 
         public PlayniteGameOverlay(IPlayniteAPI api) : base(api)
@@ -211,6 +294,9 @@ namespace PlayniteGameOverlay
             // Initialize global keyboard hook
             keyboardHook = new GlobalKeyboardHook();
             keyboardHook.KeyPressed += OnKeyPressed;
+
+            // Read XInput controllers ourselves (works in Desktop Mode and while a game is focused)
+            StartControllerListener();
         }
 
         public void ReloadOverlay(OverlaySettings settings)
@@ -244,6 +330,7 @@ namespace PlayniteGameOverlay
             suspendWatchdog?.Stop();
 
             // Cleanup resources
+            StopControllerListener();
             overlayWindow?.Close();
             keyboardHook?.Dispose();
         }
@@ -252,6 +339,7 @@ namespace PlayniteGameOverlay
         {
             // Extension unload: last chance to resume a suspended game
             suspender.ResumeAll("extension dispose");
+            StopControllerListener();
             base.Dispose();
         }
 
@@ -1567,12 +1655,16 @@ namespace PlayniteGameOverlay
 
         public ControllerInput? Update(OnControllerButtonStateChangedArgs args)
         {
-            if (args == null || args.Button == null)
+            if (args == null)
             {
                 return null;
             }
-            var pressed = args.State == ControllerInputState.Pressed;
-            switch (args.Button)
+            return Update(args.Button, args.State == ControllerInputState.Pressed);
+        }
+
+        public ControllerInput? Update(ControllerInput button, bool pressed)
+        {
+            switch (button)
             {
                 case ControllerInput.A:
                     ButtonA = pressed;
@@ -1647,7 +1739,7 @@ namespace PlayniteGameOverlay
 
             if (pressed)
             {
-                return args.Button;
+                return button;
             }
             else
             {

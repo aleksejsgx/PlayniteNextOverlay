@@ -11,7 +11,7 @@ if (-not $BuildDir) { $BuildDir = Join-Path $repo "bin\Release" }
 $yamlPath = Join-Path $BuildDir "extension.yaml"
 if (-not (Test-Path -LiteralPath $yamlPath)) { throw "extension.yaml was not found in $BuildDir" }
 
-$version = "1.0.0"
+$version = "1.0.3"
 foreach ($line in Get-Content -LiteralPath $yamlPath) {
     if ($line -match '^\s*Version:\s*(.+)\s*$') { $version = $Matches[1].Trim(); break }
 }

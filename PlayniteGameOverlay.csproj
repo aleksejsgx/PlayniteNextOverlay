@@ -68,6 +68,7 @@
     </Compile>
     <Compile Include="Properties\SDL2.cs" />
     <Compile Include="WindowHelper.cs" />
+    <Compile Include="XInputControllerListener.cs" />
   </ItemGroup>
 
   <ItemGroup>

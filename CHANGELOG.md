@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.3 - 2026-10-24
+
+- Controller support in Desktop Mode. Start+Back (or Guide, if chosen in settings) now shows the overlay in Desktop Mode too, not only in Fullscreen Mode.
+- XInput controllers (Xbox and compatible pads) are read directly by the extension, so the shortcut and overlay navigation work while a game has the focus and Playnite is in the background.
+- Holding the shortcut toggles the overlay only once, and a pad never triggers twice in Fullscreen Mode.
+- With no game running, the shortcut brings Playnite to the front in the mode it is already in (Desktop Mode is no longer switched to Fullscreen).
+- Moonlight/Sunshine streaming support (experimental), feedback welcome: Sunshine's virtual Xbox pad is an XInput controller, so the shortcut works over a stream too.
+
 ## 1.0.0 - 2026-10-09
 
 First public release of Playnite Next Overlay, a fork of Playnite Game Overlay 0.4.5.

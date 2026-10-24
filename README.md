@@ -57,7 +57,7 @@ For the achievement features, install [Playnite Achievements](https://github.com
 
 ## Getting started
 
-- Press **Alt+`** (the key left of 1), or **Start + Back** on a controller, to show or hide the overlay.
+- Press **Alt+`** (the key left of 1), or **Start + Back** on a controller, to show or hide the overlay. The controller works in both Desktop and Fullscreen Mode, also while the game has the focus.
 - Move with the D-pad, the left stick or the arrow keys. Press A or Enter to choose, and B or Esc to close.
 - Set your recorder's shortcuts in Playnite, under Add-ons, then Extensions settings, then Playnite Next Overlay.
 
