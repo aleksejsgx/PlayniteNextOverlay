@@ -27,7 +27,17 @@
                 <x:Type TypeName="local:AspectRatio"/>
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
+        <ObjectDataProvider x:Key="ControllerComboButtonEnum" 
+                    MethodName="GetValues" 
+                    ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="local:ControllerComboButton"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
         <local:EnumDescriptionConverter x:Key="EnumDescriptionConverter" />
+        <DataTemplate x:Key="EnumDescriptionTemplate">
+            <TextBlock Text="{Binding Path=., Converter={StaticResource EnumDescriptionConverter}}" />
+        </DataTemplate>
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
         <StackPanel Margin="20" MaxWidth="800">
@@ -54,6 +64,34 @@
                 </ComboBox.ItemTemplate>
             </ComboBox>
 
+            <!-- Custom controller combination (enabled when "Custom combination" is selected) -->
+            <StackPanel Margin="20,0,0,15" IsEnabled="{Binding IsCustomCombo}">
+                <TextBlock Text="Custom combination: hold all the chosen buttons together (pick 2 or 3)."
+                           TextWrapping="Wrap" Margin="0,0,0,5"/>
+                <StackPanel Orientation="Horizontal">
+                    <ComboBox ItemsSource="{Binding Source={StaticResource ControllerComboButtonEnum}}"
+                              SelectedItem="{Binding CustomComboButton1}"
+                              ItemTemplate="{StaticResource EnumDescriptionTemplate}"
+                              Width="170" Margin="0,0,8,0"/>
+                    <TextBlock Text="+" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <ComboBox ItemsSource="{Binding Source={StaticResource ControllerComboButtonEnum}}"
+                              SelectedItem="{Binding CustomComboButton2}"
+                              ItemTemplate="{StaticResource EnumDescriptionTemplate}"
+                              Width="170" Margin="0,0,8,0"/>
+                    <TextBlock Text="+" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <ComboBox ItemsSource="{Binding Source={StaticResource ControllerComboButtonEnum}}"
+                              SelectedItem="{Binding CustomComboButton3}"
+                              ItemTemplate="{StaticResource EnumDescriptionTemplate}"
+                              Width="170"/>
+                </StackPanel>
+                <TextBlock TextWrapping="Wrap" Margin="0,5,0,0" Foreground="#888888">
+                    <Run Text="Current shortcut:"/>
+                    <Run Text="{Binding ShortcutDisplayText, Mode=OneWay}" FontWeight="Bold"/>
+                </TextBlock>
+                <TextBlock TextWrapping="Wrap" Margin="0,5,0,0" Foreground="#888888"
+                           Text="Pick a combination that Steam, Moonlight, Sunshine, Xbox Game Bar and your games don't use, for example LB + RB + Back. Avoid A and B: inside the overlay they also select and close."/>
+            </StackPanel>
+
             <TextBlock Text="Close Game Behavior:" 
          Margin="0,0,0,5"/>
             <ComboBox ItemsSource="{Binding Source={StaticResource CloseBehaviorEnum}}"
@@ -74,6 +112,8 @@
 
             <TextBlock Text="If you use the Guide button to open the overlay, turn off Guide-button detection in Steam, Xbox Game Bar, and Playnite (the setting named Show Playnite when the Guide button is pressed)." TextWrapping="Wrap"
            Margin="0,0,0,20" Foreground="#888888" />
+            <TextBlock Text="The controller shortcut works in Desktop and Fullscreen Mode, also while a game has the focus, and it shows and hides the overlay. Moonlight/Sunshine streaming support is experimental: feedback welcome." TextWrapping="Wrap"
+           Margin="0,0,0,10" Foreground="#888888" />
             <TextBlock Text="Keyboard shortcut: Alt+` (backtick, usually the key just left of 1)." 
            Margin="0,0,0,20" Foreground="#888888"/>
             <TextBlock Text="Cover Shape:" 

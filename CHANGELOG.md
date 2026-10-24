@@ -4,6 +4,8 @@
 
 - Controller support in Desktop Mode. Start+Back (or Guide, if chosen in settings) now shows the overlay in Desktop Mode too, not only in Fullscreen Mode.
 - XInput controllers (Xbox and compatible pads) are read directly by the extension, so the shortcut and overlay navigation work while a game has the focus and Playnite is in the background.
+- Custom controller combination in settings: pick 2 or 3 buttons (Start, Back, Guide, LB, RB, LT, RT, LS, RS, A, B, X, Y, D-pad) to show and hide the overlay, so it does not clash with Steam, Moonlight or other apps. The default stays Start+Back, and the Start+Back, Guide and Off presets from 1.0.0 are kept as they are.
+- The controller shortcut now also closes the overlay while it is open.
 - Holding the shortcut toggles the overlay only once, and a pad never triggers twice in Fullscreen Mode.
 - With no game running, the shortcut brings Playnite to the front in the mode it is already in (Desktop Mode is no longer switched to Fullscreen).
 - Moonlight/Sunshine streaming support (experimental), feedback welcome: Sunshine's virtual Xbox pad is an XInput controller, so the shortcut works over a stream too.

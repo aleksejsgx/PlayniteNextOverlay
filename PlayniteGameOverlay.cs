@@ -78,7 +78,7 @@ namespace PlayniteGameOverlay
         // XInputControllerListener (Desktop, Fullscreen and while a game has the focus); the Playnite
         // events are still used for pads XInput cannot see (e.g. a DualSense without Steam Input) in Fullscreen.
         private XInputControllerListener xinputListener;
-        private bool shortcutArmed = true;                 // re-armed once Start/Back (or Guide) are released
+        private bool shortcutArmed = true;                 // re-armed once a button of the shortcut is released
         private DateTime lastShortcutTime = DateTime.MinValue;
         private const int ShortcutCooldownMs = 600;
 
@@ -152,16 +152,26 @@ namespace PlayniteGameOverlay
             }));
         }
 
+        // Buttons currently held, across all pads and both input sources (UI thread only).
+        private readonly HashSet<ControllerInput> heldButtons = new HashSet<ControllerInput>();
+
         private void HandleControllerInput(ControllerInput button, bool pressed, string source)
         {
             var mostRecentPress = controllerState.Update(button, pressed);
+            if (pressed)
+                heldButtons.Add(button);
+            else
+                heldButtons.Remove(button);
 
-            // Re-arm the shortcut once its buttons are released, so holding them never toggles repeatedly.
-            if (!controllerState.ButtonStart || !controllerState.ButtonBack)
-            {
-                if (Settings.ControllerShortcut != ControllerShortcut.Guide || !controllerState.ButtonGuide)
-                    shortcutArmed = true;
-            }
+            var combo = Settings.GetShortcutButtons();
+            bool isComboButton = Array.IndexOf(combo, button) >= 0;
+
+            // Re-arm the shortcut once one of its buttons is released, so holding it never toggles repeatedly.
+            if (!pressed && isComboButton)
+                shortcutArmed = true;
+
+            bool comboFired = pressed && isComboButton && combo.Length > 0 &&
+                              combo.All(b => heldButtons.Contains(b)) && TryConsumeShortcut();
 
             if (overlayWindow == null)
                 return;
@@ -170,6 +180,14 @@ namespace PlayniteGameOverlay
             {
                 // Log all controller actions
                 log($"Window Recieved {(pressed ? "Pressed" : "Released")}: {button} ({source})", "CTRL_INPUT");
+
+                // The shortcut also closes the overlay (and the achievement list with it)
+                if (comboFired)
+                {
+                    log($"Controller shortcut {Settings.ShortcutDisplayText} - hiding overlay", "CTRL_NAV");
+                    overlayWindow.Hide();
+                    return;
+                }
 
                 // Achievement list view has its own controls (needs releases too, for hold-to-repeat)
                 if (overlayWindow.IsAchievementListOpen)
@@ -216,30 +234,10 @@ namespace PlayniteGameOverlay
                 return;
             }
 
-            // We only want to process presses, not releases
-            if (mostRecentPress == null)
+            if (!comboFired)
                 return;
 
-            // For Start+Back combination or Guide button handling
-            if (mostRecentPress != ControllerInput.Start && mostRecentPress != ControllerInput.Back && mostRecentPress != ControllerInput.Guide)
-                return;
-
-            log($"Background Listener Recieved Pressed: {button} ({source})", "CTRL_INPUT");
-
-            bool startBackCombo = Settings.ControllerShortcut == ControllerShortcut.StartBack &&
-                                  controllerState.ButtonStart && controllerState.ButtonBack;
-            bool guideActivated = Settings.ControllerShortcut == ControllerShortcut.Guide &&
-                                  controllerState.ButtonGuide;
-
-            log($"sb:{startBackCombo}, g:{guideActivated}, armed:{shortcutArmed}");
-            if (!startBackCombo && !guideActivated)
-                return;
-
-            // Debounce: one toggle per press of the combo, and never two within the cooldown.
-            if (!shortcutArmed || (DateTime.UtcNow - lastShortcutTime).TotalMilliseconds < ShortcutCooldownMs)
-                return;
-            shortcutArmed = false;
-            lastShortcutTime = DateTime.UtcNow;
+            log($"Controller shortcut {Settings.ShortcutDisplayText} pressed ({source})", "CTRL_INPUT");
 
             var runningGame = playniteAPI.Database.Games.FirstOrDefault(g => g.IsRunning);
             if (runningGame != null)
@@ -255,6 +253,16 @@ namespace PlayniteGameOverlay
                 // (Fullscreen keeps the 1.0.0 behavior; Desktop is no longer switched to Fullscreen).
                 ShowPlaynite(playniteAPI.ApplicationInfo.Mode == ApplicationMode.Fullscreen);
             }
+        }
+
+        // Debounce: one toggle per press of the combo, and never two within the cooldown.
+        private bool TryConsumeShortcut()
+        {
+            if (!shortcutArmed || (DateTime.UtcNow - lastShortcutTime).TotalMilliseconds < ShortcutCooldownMs)
+                return false;
+            shortcutArmed = false;
+            lastShortcutTime = DateTime.UtcNow;
+            return true;
         }
 
         public PlayniteGameOverlay(IPlayniteAPI api) : base(api)
@@ -1232,6 +1240,11 @@ namespace PlayniteGameOverlay
 
         // Using properties with setters that notify of changes
         private ControllerShortcut _controllerShortcut = ControllerShortcut.StartBack;
+        // Custom controller combination (ControllerShortcut.Custom). Configs from 1.0.0 do not have these
+        // fields and get Start + Back, the same as the default preset.
+        private ControllerComboButton _customComboButton1 = ControllerComboButton.Start;
+        private ControllerComboButton _customComboButton2 = ControllerComboButton.Back;
+        private ControllerComboButton _customComboButton3 = ControllerComboButton.None;
         private CloseBehavior _closeBehavior = CloseBehavior.CloseAndEnd;
         private bool _debugMode = false;
         private AspectRatio _aspectRatio = AspectRatio.Portrait;
@@ -1265,7 +1278,83 @@ namespace PlayniteGameOverlay
         public ControllerShortcut ControllerShortcut
         {
             get => _controllerShortcut;
-            set => SetValue(ref _controllerShortcut, value);
+            set
+            {
+                SetValue(ref _controllerShortcut, value);
+                OnPropertyChanged(nameof(IsCustomCombo));
+                OnPropertyChanged(nameof(ShortcutDisplayText));
+            }
+        }
+
+        public ControllerComboButton CustomComboButton1
+        {
+            get => _customComboButton1;
+            set { SetValue(ref _customComboButton1, value); OnPropertyChanged(nameof(ShortcutDisplayText)); }
+        }
+
+        public ControllerComboButton CustomComboButton2
+        {
+            get => _customComboButton2;
+            set { SetValue(ref _customComboButton2, value); OnPropertyChanged(nameof(ShortcutDisplayText)); }
+        }
+
+        public ControllerComboButton CustomComboButton3
+        {
+            get => _customComboButton3;
+            set { SetValue(ref _customComboButton3, value); OnPropertyChanged(nameof(ShortcutDisplayText)); }
+        }
+
+        [Playnite.SDK.Data.DontSerialize]
+        public bool IsCustomCombo => ControllerShortcut == ControllerShortcut.Custom;
+
+        /// <summary>The custom combination's distinct buttons, in slot order (None slots skipped).</summary>
+        private List<ControllerComboButton> CustomComboSelection()
+        {
+            return new[] { CustomComboButton1, CustomComboButton2, CustomComboButton3 }
+                .Where(b => b != ControllerComboButton.None && Enum.IsDefined(typeof(ControllerComboButton), b))
+                .Distinct()
+                .ToList();
+        }
+
+        /// <summary>
+        /// Buttons that must all be held to show/hide the overlay. Empty when the shortcut is off.
+        /// An invalid custom combination (fewer than 2 buttons) falls back to Start + Back.
+        /// </summary>
+        public ControllerInput[] GetShortcutButtons()
+        {
+            switch (ControllerShortcut)
+            {
+                case ControllerShortcut.None:
+                    return new ControllerInput[0];
+                case ControllerShortcut.Guide:
+                    return new[] { ControllerInput.Guide };
+                case ControllerShortcut.Custom:
+                    var custom = CustomComboSelection();
+                    if (custom.Count >= 2)
+                        return custom.Select(ControllerComboButtons.ToInput).ToArray();
+                    return new[] { ControllerInput.Start, ControllerInput.Back };
+                default:
+                    return new[] { ControllerInput.Start, ControllerInput.Back };
+            }
+        }
+
+        [Playnite.SDK.Data.DontSerialize]
+        public string ShortcutDisplayText
+        {
+            get
+            {
+                switch (ControllerShortcut)
+                {
+                    case ControllerShortcut.None: return "Off";
+                    case ControllerShortcut.Guide: return "Guide";
+                    case ControllerShortcut.Custom:
+                        var custom = CustomComboSelection();
+                        return custom.Count >= 2
+                            ? string.Join(" + ", custom.Select(ControllerComboButtons.ShortName))
+                            : "Start + Back (pick at least 2 buttons)";
+                    default: return "Start + Back";
+                }
+            }
         }
 
         public CloseBehavior CloseBehavior
@@ -1402,6 +1491,9 @@ namespace PlayniteGameOverlay
 
         // Backup values for cancel operation
         private ControllerShortcut _controllerShortcutBackup;
+        private ControllerComboButton _customComboButton1Backup;
+        private ControllerComboButton _customComboButton2Backup;
+        private ControllerComboButton _customComboButton3Backup;
         private CloseBehavior _closeBehaviorBackup;
         private bool _debugModeBackup;
         private bool _showRecordGameplayBackup;
@@ -1439,6 +1531,13 @@ namespace PlayniteGameOverlay
             {
                 if (savedSettings.ControllerShortcut != null)
                     ControllerShortcut = savedSettings.ControllerShortcut;
+                // Unknown values (e.g. a config from a newer version) fall back to the default preset.
+                if (!Enum.IsDefined(typeof(ControllerShortcut), ControllerShortcut))
+                    ControllerShortcut = ControllerShortcut.StartBack;
+                // Missing in 1.0.0 configs -> Start + Back from the parameterless constructor.
+                CustomComboButton1 = savedSettings.CustomComboButton1;
+                CustomComboButton2 = savedSettings.CustomComboButton2;
+                CustomComboButton3 = savedSettings.CustomComboButton3;
                 if (savedSettings.CloseBehavior != null)
                     CloseBehavior = savedSettings.CloseBehavior;
                 if (savedSettings.DebugMode != null)
@@ -1530,6 +1629,9 @@ namespace PlayniteGameOverlay
         {
             // Backup current values in case user cancels
             _controllerShortcutBackup = ControllerShortcut;
+            _customComboButton1Backup = CustomComboButton1;
+            _customComboButton2Backup = CustomComboButton2;
+            _customComboButton3Backup = CustomComboButton3;
             _debugModeBackup = DebugMode;
             _closeBehaviorBackup = CloseBehavior;
 
@@ -1560,6 +1662,9 @@ namespace PlayniteGameOverlay
         {
             // Restore from backup
             ControllerShortcut = _controllerShortcutBackup;
+            CustomComboButton1 = _customComboButton1Backup;
+            CustomComboButton2 = _customComboButton2Backup;
+            CustomComboButton3 = _customComboButton3Backup;
             DebugMode = _debugModeBackup;
             CloseBehavior = _closeBehaviorBackup;
 
@@ -1596,8 +1701,11 @@ namespace PlayniteGameOverlay
         public bool VerifySettings(out List<string> errors)
         {
             errors = new List<string>();
-            // Add any validation logic here if needed
-            return true;
+            if (ControllerShortcut == ControllerShortcut.Custom && CustomComboSelection().Count < 2)
+            {
+                errors.Add("Playnite Next Overlay: pick at least 2 different buttons for the custom controller combination.");
+            }
+            return errors.Count == 0;
         }
     }
 
@@ -1610,7 +1718,80 @@ namespace PlayniteGameOverlay
         Guide,
 
         [Description("Off")]
-        None
+        None,
+
+        // Added in 1.0.3. Appended so the numbers saved by 1.0.0 (0..2) keep their meaning.
+        [Description("Custom combination")]
+        Custom
+    }
+
+    /// <summary>Buttons that can be part of a custom controller combination. Values are saved in the config: do not renumber.</summary>
+    public enum ControllerComboButton
+    {
+        [Description("(none)")] None = 0,
+        [Description("Start / Menu")] Start = 1,
+        [Description("Back / View")] Back = 2,
+        [Description("Guide (Xbox)")] Guide = 3,
+        [Description("LB (left bumper)")] LeftShoulder = 4,
+        [Description("RB (right bumper)")] RightShoulder = 5,
+        [Description("LT (left trigger)")] LeftTrigger = 6,
+        [Description("RT (right trigger)")] RightTrigger = 7,
+        [Description("LS (left stick click)")] LeftStick = 8,
+        [Description("RS (right stick click)")] RightStick = 9,
+        [Description("A")] A = 10,
+        [Description("B")] B = 11,
+        [Description("X")] X = 12,
+        [Description("Y")] Y = 13,
+        [Description("D-pad Up")] DPadUp = 14,
+        [Description("D-pad Down")] DPadDown = 15,
+        [Description("D-pad Left")] DPadLeft = 16,
+        [Description("D-pad Right")] DPadRight = 17
+    }
+
+    public static class ControllerComboButtons
+    {
+        public static ControllerInput ToInput(ControllerComboButton b)
+        {
+            switch (b)
+            {
+                case ControllerComboButton.Start: return ControllerInput.Start;
+                case ControllerComboButton.Back: return ControllerInput.Back;
+                case ControllerComboButton.Guide: return ControllerInput.Guide;
+                case ControllerComboButton.LeftShoulder: return ControllerInput.LeftShoulder;
+                case ControllerComboButton.RightShoulder: return ControllerInput.RightShoulder;
+                case ControllerComboButton.LeftTrigger: return ControllerInput.TriggerLeft;
+                case ControllerComboButton.RightTrigger: return ControllerInput.TriggerRight;
+                case ControllerComboButton.LeftStick: return ControllerInput.LeftStick;
+                case ControllerComboButton.RightStick: return ControllerInput.RightStick;
+                case ControllerComboButton.A: return ControllerInput.A;
+                case ControllerComboButton.B: return ControllerInput.B;
+                case ControllerComboButton.X: return ControllerInput.X;
+                case ControllerComboButton.Y: return ControllerInput.Y;
+                case ControllerComboButton.DPadUp: return ControllerInput.DPadUp;
+                case ControllerComboButton.DPadDown: return ControllerInput.DPadDown;
+                case ControllerComboButton.DPadLeft: return ControllerInput.DPadLeft;
+                case ControllerComboButton.DPadRight: return ControllerInput.DPadRight;
+                default: return ControllerInput.None;
+            }
+        }
+
+        public static string ShortName(ControllerComboButton b)
+        {
+            switch (b)
+            {
+                case ControllerComboButton.LeftShoulder: return "LB";
+                case ControllerComboButton.RightShoulder: return "RB";
+                case ControllerComboButton.LeftTrigger: return "LT";
+                case ControllerComboButton.RightTrigger: return "RT";
+                case ControllerComboButton.LeftStick: return "LS";
+                case ControllerComboButton.RightStick: return "RS";
+                case ControllerComboButton.DPadUp: return "D-pad Up";
+                case ControllerComboButton.DPadDown: return "D-pad Down";
+                case ControllerComboButton.DPadLeft: return "D-pad Left";
+                case ControllerComboButton.DPadRight: return "D-pad Right";
+                default: return b.ToString();
+            }
+        }
     }
 
 
