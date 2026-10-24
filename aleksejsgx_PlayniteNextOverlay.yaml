@@ -7,6 +7,11 @@ Tags: [overlay, handheld, gaming, achievements, battery, controller, steamdeck, 
 ShortDescription: 'An in-game overlay for Playnite with capture buttons, a controller-friendly achievement list, and an optional pause while that list is open.'
 Name: 'Playnite Next Overlay'
 Author: 'AleksejSg'
+Description: |-
+  A continuation of jonosellier's Playnite Game Overlay. Open it in any game with Alt+` or a controller combination, in both Desktop and Fullscreen Mode.
+  The main feature is an in-game achievement list from Playnite Achievements (SuccessStory as a fallback): browse it with the gamepad, filter by unlocked and locked, see rarity, and optionally pause the game while the list is open.
+  Also includes screenshot, record, instant replay and performance overlay buttons, playtime, battery level and a customizable controller shortcut.
+IconUrl: https://raw.githubusercontent.com/aleksejsgx/PlayniteNextOverlay/refs/heads/main/icon.png
 SourceUrl: https://github.com/aleksejsgx/PlayniteNextOverlay
 Links:
   Website: https://github.com/aleksejsgx/PlayniteNextOverlay
