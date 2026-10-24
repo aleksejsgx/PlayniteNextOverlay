@@ -492,6 +492,10 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </Border>
+            <!-- Version (subtle, bottom-right): prompts users to check they run the latest release -->
+            <TextBlock x:Name="VersionLabel" Text="{x:Static local:AppVersion.Display}" ToolTip="Playnite Next Overlay - check GitHub Releases for updates"
+                       HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,20,8"
+                       FontSize="13" Foreground="#80FFFFFF" IsHitTestVisible="False" Focusable="False"/>
             </Grid>
             <!-- end of MainLayer -->
 

@@ -277,7 +277,7 @@ namespace PlayniteGameOverlay
 
         public override void OnApplicationStarted(OnApplicationStartedEventArgs args)
         {
-            logger.Info("Starting Overlay Extension...");
+            logger.Info($"Starting Playnite Next Overlay {AppVersion.Display}...");
 
             // Check which achievement plugins are installed (Playnite Achievements / SuccessStory)
             CheckAchievementProviders();

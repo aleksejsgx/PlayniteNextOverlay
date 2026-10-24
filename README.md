@@ -58,6 +58,7 @@ For the achievement features, install [Playnite Achievements](https://github.com
 ## Getting started
 
 - Press **Alt+`** (the key left of 1), or **Start + Back** on a controller, to show or hide the overlay. The controller works in both Desktop and Fullscreen Mode, also while the game has the focus. In settings you can pick the Guide button or your own combination of 2 or 3 buttons instead, so the overlay does not clash with Steam, Moonlight or other apps. Moonlight/Sunshine streaming support is experimental: feedback welcome.
+- The version you are running is shown in a corner of the overlay and at the top of the settings page, next to a **Check for updates** link to the [releases page](https://github.com/aleksejsgx/PlayniteNextOverlay/releases).
 - Move with the D-pad, the left stick or the arrow keys. Press A or Enter to choose, and B or Esc to close.
 - Set your recorder's shortcuts in Playnite, under Add-ons, then Extensions settings, then Playnite Next Overlay.
 
