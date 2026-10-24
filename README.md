@@ -62,7 +62,7 @@ For the achievement features, install [Playnite Achievements](https://github.com
 - Move with the D-pad, the left stick or the arrow keys. Press A or Enter to choose, and B or Esc to close.
 - Set your recorder's shortcuts in Playnite, under Add-ons, then Extensions settings, then Playnite Next Overlay.
 
-![Settings](docs/screenshots/settings.png)
+![Settings](docs/screenshots/settings.webp)
 
 The [full guide](docs/USAGE.md) covers every control, the shortcut format and how the game pause works.
 
