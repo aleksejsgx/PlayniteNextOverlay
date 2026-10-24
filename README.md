@@ -68,7 +68,18 @@ The [full guide](docs/USAGE.md) covers every control, the shortcut format and ho
 
 ## Roadmap
 
-1.0 is the first release, and more are on the way. Next up is a screenshot and video manager inside the overlay: browse your captures, preview them and delete them with the gamepad, without leaving the game.
+Done in 1.0.4:
+
+- [x] Controller support in Desktop Mode, also while a game has the focus
+- [x] Customizable controller combination (2 or 3 buttons)
+- [x] Version label in the overlay and settings, with a Check for updates link
+
+Planned and community suggestions (most of these ideas came from user feedback, thank you):
+
+- [ ] Screenshot and video manager: browse, preview and delete your captures with the gamepad, without leaving the game
+- [ ] Steam Friends and chat shortcut button in the overlay
+- [ ] Per-game notes panel
+- [ ] Better Moonlight/Sunshine streaming support (currently experimental)
 
 Ideas and bug reports are welcome in [Issues](https://github.com/aleksejsgx/PlayniteNextOverlay/issues).
 
@@ -78,7 +89,7 @@ The project targets .NET Framework 4.6.2 and builds with the .NET SDK:
 
 ```powershell
 dotnet build -c Release
-powershell -File .\pack.ps1 -Destination .\PlayniteNextOverlay_1.0.0.pext
+powershell -File .\pack.ps1 -Destination .\PlayniteNextOverlay_1.0.4.pext
 ```
 
 The repository address lives in `REPOSITORY.url`, and the add-on manifests point at the same place, so update them together.
